@@ -1,0 +1,101 @@
+# =============================================================================
+# Domain: Communication
+# Entity: Message
+# Description: One inbound or outbound message on a Thread. Inbound messages arrive from a channel provider
+# (a webhook) and are DEDUPED on (channel, external_id) — provider webhooks are at-least-once, so a
+# redelivery must not create a second message nor re-publish MessageReceived. Outbound messages are sent
+# through the ChannelPort and carry a delivery status (queued → sent → delivered/failed). Posts NO GL.
+# =============================================================================
+
+models:
+  - name: Message
+    collection: messages
+    description: "One inbound/outbound message on a thread"
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique message id"
+      thread_id:
+        type: uuid
+        attributes: ["@required", "@foreign_key(Thread.id)"]
+        description: "The thread this message belongs to"
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Org owner # logical FK to organization.Company.id"
+      direction:
+        type: Direction
+        attributes: ["@required"]
+        description: "inbound (from the counterpart) | outbound (to the counterpart)"
+      channel:
+        type: Channel
+        attributes: ["@required"]
+        description: "The channel this message travelled on"
+      external_id:
+        type: string?
+        attributes: ["@length(max=200)", "@exclude_from_foreign_key_check"]
+        description: "Provider message id — dedups inbound webhooks + carries delivery receipts"
+      address_from:
+        type: string?
+        attributes: ["@length(max=200)"]
+        description: "Sender address (phone/email)"
+      address_to:
+        type: string?
+        attributes: ["@length(max=200)"]
+        description: "Recipient address (phone/email)"
+      body:
+        type: string
+        attributes: ["@required", "@length(max=4000)"]
+        description: "Message body"
+      status:
+        type: MessageStatus
+        attributes: ["@required", "@default(received)"]
+        description: "received (inbound) | queued/sent/delivered/failed (outbound)"
+      failure_reason:
+        type: string?
+        attributes: ["@length(max=300)"]
+        description: "Why an outbound send failed (channel rejection)"
+      occurred_at:
+        type: datetime
+        attributes: ["@required", "@default(now)"]
+        description: "When the message was received/sent"
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+    indexes:
+      # Provider message ids are unique per channel — this is the inbound-dedup + send-once guard.
+      # external_id is nullable; Postgres treats NULLs as distinct, so outbound rows without an id yet
+      # never collide.
+      - type: unique
+        fields: [channel, external_id]
+      - type: index
+        fields: [thread_id]
+      - type: index
+        fields: [status]
+
+enums:
+  - name: Direction
+    description: "Message direction relative to us"
+    variants:
+      - name: inbound
+        description: "From the external counterpart to us"
+        default: true
+      - name: outbound
+        description: "From us to the external counterpart"
+
+  - name: MessageStatus
+    description: "Message lifecycle (inbound lands 'received'; outbound flows queued→sent→delivered/failed)"
+    variants:
+      - name: received
+        description: "Inbound message recorded"
+        default: true
+      - name: queued
+        description: "Outbound queued for the channel"
+      - name: sent
+        description: "Handed to the channel provider"
+      - name: delivered
+        description: "Provider confirmed delivery"
+      - name: failed
+        description: "Channel rejected / delivery failed"

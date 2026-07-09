@@ -1,0 +1,81 @@
+# =============================================================================
+# Domain: Communication
+# Entity: Thread
+# Description: A conversation with an external counterpart (a party) over one channel (WhatsApp/email/SMS),
+# optionally linked to the business object it concerns (a lead, an issue, an order) via a polymorphic
+# logical reference (subject_type + subject_id — no DB FK, the ACL boundary). The channel gateway groups
+# inbound + outbound Messages under a Thread so a consumer (CRM, support) has one place to attach.
+# =============================================================================
+
+models:
+  - name: Thread
+    collection: threads
+    description: "A conversation with a party over one channel, linked to what it concerns"
+    fields:
+      id:
+        type: uuid
+        attributes: ["@id", "@default(uuid)"]
+        description: "Unique thread id"
+      company_id:
+        type: uuid
+        attributes: ["@required", "@exclude_from_foreign_key_check"]
+        description: "Org owner # logical FK to organization.Company.id"
+      channel:
+        type: Channel
+        attributes: ["@required", "@default(whatsapp)"]
+        description: "The channel this thread runs over"
+      party_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "The external counterpart # logical FK to party.Party.id"
+      subject_type:
+        type: string?
+        attributes: ["@length(max=60)"]
+        description: "What this thread concerns (lead | issue | order | invoice) — polymorphic logical ref"
+      subject_id:
+        type: uuid?
+        attributes: ["@exclude_from_foreign_key_check"]
+        description: "The concerned object # logical FK keyed by subject_type"
+      external_ref:
+        type: string?
+        attributes: ["@length(max=200)"]
+        description: "Provider conversation id (e.g. the WhatsApp conversation handle)"
+      status:
+        type: ThreadStatus
+        attributes: ["@required", "@default(open)"]
+        description: "open | closed"
+      last_message_at:
+        type: datetime?
+        description: "When the most recent message landed (inbound or outbound)"
+      metadata:
+        type: Metadata
+        attributes: ["@audit_metadata"]
+        description: "Audit metadata"
+    indexes:
+      - type: index
+        fields: [company_id, party_id]
+      - type: index
+        fields: [subject_type, subject_id]
+      - type: index
+        fields: [status]
+
+enums:
+  - name: Channel
+    description: "A delivery/receipt channel"
+    variants:
+      - name: whatsapp
+        description: "WhatsApp Business API (the Indonesia edge)"
+        default: true
+      - name: email
+        description: "Email"
+      - name: sms
+        description: "SMS"
+
+  - name: ThreadStatus
+    description: "Thread lifecycle"
+    variants:
+      - name: open
+        description: "Active conversation"
+        default: true
+      - name: closed
+        description: "Closed / archived"
