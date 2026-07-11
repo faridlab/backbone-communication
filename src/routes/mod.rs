@@ -12,7 +12,9 @@ use std::sync::Arc;
 // Import handlers
 use crate::presentation::http::{
     create_message_routes,
-    create_thread_routes
+    create_message_read_routes,
+    create_thread_routes,
+    create_thread_read_routes
 };
 
 // Import AppState for stateful routes
@@ -38,6 +40,17 @@ pub fn create_stateless_routes(module: &crate::CommunicationModule) -> Router<()
     Router::new()
         .merge(create_message_routes(module.message_service.clone()))
         .merge(create_thread_routes(module.thread_service.clone()))
+}
+
+/// Read-only routes for the Communication module — every entity mounted READ-ONLY (the guarded base).
+///
+/// The generic `create_stateless_routes` exposes full mutable CRUD with no domain
+/// validation; this exposes only reads, so generic mutation can't bypass a write
+/// service's invariants. Extend it: `create_readonly_communication_routes(m).merge(my_validated_writes)`.
+pub fn create_readonly_communication_routes(module: &crate::CommunicationModule) -> Router<()> {
+    Router::new()
+        .merge(create_message_read_routes(module.message_service.clone()))
+        .merge(create_thread_read_routes(module.thread_service.clone()))
 }
 
 /// Get all routes (stateless) for the Communication module.
