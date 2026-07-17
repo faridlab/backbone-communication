@@ -14,6 +14,13 @@ user_owned:
   - "src/application/service/communication_events.rs"
   - "src/application/service/communication_ports.rs"
   - "src/application/service/communication_write_service.rs"
+  # Own the hand-written communication SQL (the inbound (channel, external_id) dedup claim + re-reads,
+  # the thread routing lookups, the thread open/link/close transitions, the outbound
+  # queue/sent/failed/delivered transitions) that the write service orchestrates. Declared here — not
+  # renamed with a `_custom` suffix — so the generator skips them wholesale; this declaration is what
+  # makes editing them legitimate.
+  - "src/infrastructure/persistence/message_repository.rs"
+  - "src/infrastructure/persistence/thread_repository.rs"
   - "tests/communication_golden_cases.rs"
   - "tests/communication_support_seam.rs"
   - "tests/integrity_probes.rs"

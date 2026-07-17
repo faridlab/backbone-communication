@@ -24,4 +24,8 @@ pub use backbone_orm::repository::{
 
 // Re-export custom persistence types
 // <<< CUSTOM
+// The hand-written communication SQL's parameter/projection types (see `message_repository` and
+// `thread_repository`, both declared `user_owned` in metaphor.codegen.yaml).
+pub use message_repository::{MessageRefRow, NewInboundMessageRow, NewOutboundMessageRow};
+pub use thread_repository::{NewRoutedThreadRow, NewThreadRow, RoutedThreadRow, ThreadSendRow};
 // END CUSTOM
