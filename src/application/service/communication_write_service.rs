@@ -5,6 +5,7 @@
 //! thread, and send outbound messages through the `ChannelPort`. Posts NO GL. Threads link to the party
 //! and (optionally) the lead/issue/order they concern via a polymorphic logical reference.
 
+use backbone_orm::company_scope;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
@@ -74,11 +75,15 @@ impl CommunicationWriteService {
             return Err(CommError::Invalid("inbound message needs a body".into()));
         }
         // Fast path: already seen this provider message → return the original, publish nothing.
-        if let Some(row) = sqlx::query(
+        // RLS scope (ADR-0008), DTO-company pattern: the webhook payload names the company, so every
+        // read/write below is fenced to it explicitly (correct for non-request callers too).
+        let dedup_q = sqlx::query(
             "SELECT id, thread_id FROM communication.messages WHERE channel=$1::channel AND external_id=$2")
-            .bind(&m.channel).bind(&m.external_id)
-            .fetch_optional(&self.pool)
-            .await?
+            .bind(&m.channel).bind(&m.external_id);
+        if let Some(row) = company_scope::with_company_scope(
+            Some(m.company_id),
+            company_scope::fetch_optional_row_scoped(&self.pool, dedup_q),
+        ).await?
         {
             return Ok(InboundOutcome {
                 thread_id: row.get("thread_id"), message_id: row.get("id"), duplicate: true,
@@ -86,6 +91,7 @@ impl CommunicationWriteService {
         }
 
         let mut tx = self.pool.begin().await?;
+        company_scope::bind_company_on(&mut tx, m.company_id).await?;
         let routed = resolve_or_open_thread(&mut tx, &m).await?;
         let thread_id = routed.id;
 
@@ -106,11 +112,13 @@ impl CommunicationWriteService {
         let Some(message_id) = inserted else {
             // Lost the race — discard the thread we may have opened; return the winner's message.
             tx.rollback().await?;
-            let row = sqlx::query(
+            let winner_q = sqlx::query(
                 "SELECT id, thread_id FROM communication.messages WHERE channel=$1::channel AND external_id=$2")
-                .bind(&m.channel).bind(&m.external_id)
-                .fetch_one(&self.pool)
-                .await?;
+                .bind(&m.channel).bind(&m.external_id);
+            let row = company_scope::with_company_scope(
+                Some(m.company_id),
+                company_scope::fetch_one_row_scoped(&self.pool, winner_q),
+            ).await?;
             return Ok(InboundOutcome {
                 thread_id: row.get("thread_id"), message_id: row.get("id"), duplicate: true,
             });
@@ -156,25 +164,31 @@ impl CommunicationWriteService {
         &self, company_id: Uuid, channel: &str, party_id: Option<Uuid>, external_ref: Option<String>,
     ) -> Result<Uuid, CommError> {
         let id = Uuid::new_v4();
-        sqlx::query(
+        // RLS scope (ADR-0008), param-company pattern: the company is an argument — fence to it.
+        let insert_q = sqlx::query(
             r#"INSERT INTO communication.threads (id, company_id, channel, party_id, external_ref, status)
                VALUES ($1,$2,$3::channel,$4,$5,'open'::thread_status)"#,
         )
-        .bind(id).bind(company_id).bind(channel).bind(party_id).bind(&external_ref)
-        .execute(&self.pool)
-        .await?;
+        .bind(id).bind(company_id).bind(channel).bind(party_id).bind(&external_ref);
+        company_scope::with_company_scope(
+            Some(company_id),
+            company_scope::execute_scoped(&self.pool, insert_q),
+        ).await?;
         Ok(id)
     }
 
     /// Attach a thread to the business object it concerns (a lead, an issue, an order) after routing.
     pub async fn link_thread(&self, thread_id: Uuid, subject_type: &str, subject_id: Uuid) -> Result<(), CommError> {
-        let n = sqlx::query(
+        // RLS scope (ADR-0008), ID-only pattern: identified by thread id alone, with no company to
+        // scope from. The update rides the REQUEST-dedicated connection (established by
+        // `company_auth`), which carries the caller's `app.company_id`; RLS fences it so another
+        // company's thread simply isn't matched and this reports NotFound.
+        let link_q = sqlx::query(
             r#"UPDATE communication.threads SET subject_type=$2, subject_id=$3
                WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
         )
-        .bind(thread_id).bind(subject_type).bind(subject_id)
-        .execute(&self.pool)
-        .await?;
+        .bind(thread_id).bind(subject_type).bind(subject_id);
+        let n = company_scope::execute_scoped(&self.pool, link_q).await?;
         if n.rows_affected() != 1 {
             return Err(CommError::NotFound("thread"));
         }
@@ -195,14 +209,17 @@ impl CommunicationWriteService {
         if body.is_empty() {
             return Err(CommError::Invalid("outbound message needs a body".into()));
         }
-        let thread = sqlx::query(
+        // RLS scope (ADR-0008), ID-only pattern: identified by thread id alone — no company argument to
+        // scope from up front. This read rides the REQUEST-dedicated connection, whose `app.company_id`
+        // fences it. Having read the thread, we bind its company explicitly on the writes below.
+        let thread_q = sqlx::query(
             r#"SELECT company_id, channel::text AS channel, status::text AS status
                FROM communication.threads WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
         )
-        .bind(thread_id)
-        .fetch_optional(&self.pool)
-        .await?
-        .ok_or(CommError::NotFound("thread"))?;
+        .bind(thread_id);
+        let thread = company_scope::fetch_optional_row_scoped(&self.pool, thread_q)
+            .await?
+            .ok_or(CommError::NotFound("thread"))?;
         if thread.get::<String, _>("status") != "open" {
             return Err(CommError::InvalidState("thread is closed"));
         }
@@ -210,36 +227,46 @@ impl CommunicationWriteService {
         let channel: String = thread.get("channel");
 
         let message_id = Uuid::new_v4();
-        sqlx::query(
+        let queue_q = sqlx::query(
             r#"INSERT INTO communication.messages
                  (id, thread_id, company_id, direction, channel, address_to, body, status, occurred_at)
                VALUES ($1,$2,$3,'outbound'::direction,$4::channel,$5,$6,'queued'::message_status, now())"#,
         )
-        .bind(message_id).bind(thread_id).bind(company_id).bind(&channel).bind(&address_to).bind(&body)
-        .execute(&self.pool)
-        .await?;
+        .bind(message_id).bind(thread_id).bind(company_id).bind(&channel).bind(&address_to).bind(&body);
+        company_scope::with_company_scope(
+            Some(company_id),
+            company_scope::execute_scoped(&self.pool, queue_q),
+        ).await?;
 
         match port.send(&OutboundSend { channel: channel.clone(), to: address_to, body }).await {
             Ok(ack) => {
-                sqlx::query(
+                let sent_q = sqlx::query(
                     r#"UPDATE communication.messages
                        SET status='sent'::message_status, external_id=$2 WHERE id=$1"#,
                 )
-                .bind(message_id).bind(&ack.external_id)
-                .execute(&self.pool)
-                .await?;
-                sqlx::query("UPDATE communication.threads SET last_message_at = now() WHERE id=$1")
-                    .bind(thread_id).execute(&self.pool).await?;
+                .bind(message_id).bind(&ack.external_id);
+                company_scope::with_company_scope(
+                    Some(company_id),
+                    company_scope::execute_scoped(&self.pool, sent_q),
+                ).await?;
+                let touch_q = sqlx::query("UPDATE communication.threads SET last_message_at = now() WHERE id=$1")
+                    .bind(thread_id);
+                company_scope::with_company_scope(
+                    Some(company_id),
+                    company_scope::execute_scoped(&self.pool, touch_q),
+                ).await?;
                 Ok(message_id)
             }
             Err(rej) => {
-                sqlx::query(
+                let failed_q = sqlx::query(
                     r#"UPDATE communication.messages
                        SET status='failed'::message_status, failure_reason=$2 WHERE id=$1"#,
                 )
-                .bind(message_id).bind(&rej.message)
-                .execute(&self.pool)
-                .await?;
+                .bind(message_id).bind(&rej.message);
+                company_scope::with_company_scope(
+                    Some(company_id),
+                    company_scope::execute_scoped(&self.pool, failed_q),
+                ).await?;
                 events.publish(&CommunicationEvent::MessageFailed { message_id, reason: rej.code.clone() });
                 Err(CommError::ChannelRejected(rej.code))
             }
@@ -251,14 +278,17 @@ impl CommunicationWriteService {
     pub async fn mark_delivered(
         &self, channel: &str, external_id: &str, events: &dyn CommunicationEventSink,
     ) -> Result<(), CommError> {
-        let moved = sqlx::query(
+        // RLS scope (ADR-0008), ID-only pattern: a delivery receipt names only (channel, external_id) —
+        // no company. Under HTTP the request-dedicated connection carries the scope. When driven by an
+        // EVENT (a provider-callback consumer), the CALLER must wrap this in
+        // `with_company_scope(Some(event.company_id))` — otherwise the update fails closed.
+        let deliver_q = sqlx::query(
             r#"UPDATE communication.messages SET status='delivered'::message_status
                WHERE channel=$1::channel AND external_id=$2 AND status='sent'::message_status
                RETURNING id"#,
         )
-        .bind(channel).bind(external_id)
-        .fetch_optional(&self.pool)
-        .await?;
+        .bind(channel).bind(external_id);
+        let moved = company_scope::fetch_optional_row_scoped(&self.pool, deliver_q).await?;
         if let Some(row) = moved {
             let message_id: Uuid = row.get("id");
             events.publish(&CommunicationEvent::MessageDelivered { message_id, external_id: external_id.to_string() });
@@ -268,13 +298,14 @@ impl CommunicationWriteService {
 
     /// Close a thread (no further sends).
     pub async fn close_thread(&self, thread_id: Uuid) -> Result<(), CommError> {
-        let n = sqlx::query(
+        // RLS scope (ADR-0008), ID-only pattern: identified by thread id alone; the update rides the
+        // request-dedicated connection, whose `app.company_id` fences it.
+        let close_q = sqlx::query(
             r#"UPDATE communication.threads SET status='closed'::thread_status
                WHERE id=$1 AND status='open'::thread_status"#,
         )
-        .bind(thread_id)
-        .execute(&self.pool)
-        .await?;
+        .bind(thread_id);
+        let n = company_scope::execute_scoped(&self.pool, close_q).await?;
         if n.rows_affected() != 1 {
             return Err(CommError::InvalidState("thread is not open"));
         }
