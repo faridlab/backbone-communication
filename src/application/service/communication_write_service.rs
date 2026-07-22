@@ -142,7 +142,7 @@ impl CommunicationWriteService {
             address_from: m.address_from.clone(), body: m.body.clone(),
         };
         let record = backbone_outbox::OutboxRecord::new(
-            "MessageReceived", "Message", message_id.to_string(),
+            "MessageReceived", "Message", message_id.to_string(), m.company_id,
             serde_json::to_value(&received).map_err(|e| CommError::Invalid(e.to_string()))?,
             chrono::Utc::now(),
         );
