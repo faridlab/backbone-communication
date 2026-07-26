@@ -255,18 +255,32 @@ impl CommunicationWriteService {
 
     /// Record a provider delivery receipt for an outbound message (idempotent — a redelivered receipt is
     /// a no-op). Publishes `MessageDelivered` on the first transition.
+    ///
+    /// `company_id` scopes the lookup, so a principal of company A cannot mark company B's message
+    /// delivered by knowing its (channel, external_id) — proving *who* the caller is is not enough,
+    /// the row must be theirs. A mismatched tenant is indistinguishable from an unknown receipt (no
+    /// transition, no event), so this does not leak whether the message exists.
     pub async fn mark_delivered(
-        &self, channel: &str, external_id: &str, events: &dyn CommunicationEventSink,
+        &self,
+        channel: &str,
+        company_id: Uuid,
+        external_id: &str,
+        events: &dyn CommunicationEventSink,
     ) -> Result<(), CommError> {
-        // RLS scope (ADR-0008), ID-only pattern: a delivery receipt names only (channel, external_id) —
-        // no company. Under HTTP the request-dedicated connection carries the scope. When driven by an
-        // EVENT (a provider-callback consumer), the CALLER must wrap this in
-        // `with_company_scope(Some(event.company_id))` — otherwise the update fails closed.
-        let moved = self.messages.mark_delivered(&self.pool, channel, external_id).await?;
-        if let Some(message_id) = moved {
-            events.publish(&CommunicationEvent::MessageDelivered { message_id, external_id: external_id.to_string() });
-        }
-        Ok(())
+        // RLS scope (ADR-0008): company on the parameter — scope the receipt update so it runs with
+        // `app.company_id` set. The inbound handler for the provider's delivery callback passes the
+        // event's company; an event/job caller can no longer forget to.
+        company_scope::with_company_scope(Some(company_id), async move {
+            let moved = self.messages.mark_delivered(&self.pool, channel, external_id).await?;
+            if let Some(message_id) = moved {
+                events.publish(&CommunicationEvent::MessageDelivered {
+                    message_id,
+                    external_id: external_id.to_string(),
+                });
+            }
+            Ok(())
+        })
+        .await
     }
 
     /// Close a thread (no further sends).

@@ -62,10 +62,11 @@ async fn cip3_channel_rejection_recorded() {
 #[tokio::test]
 async fn cip4_delivery_receipt_idempotent_and_safe() {
     let pool = pool().await;
+    let company = Uuid::new_v4();
     let svc = CommunicationWriteService::new(pool.clone());
     let sink = CapturingSink::new();
     // Unknown external id → no row transitions, no event.
-    svc.mark_delivered("whatsapp", &format!("unknown-{}", Uuid::new_v4()), &sink).await.unwrap();
+    svc.mark_delivered("whatsapp", company, &format!("unknown-{}", Uuid::new_v4()), &sink).await.unwrap();
     assert_eq!(sink.delivered(), 0);
 }
 

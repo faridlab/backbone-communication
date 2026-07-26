@@ -105,8 +105,8 @@ async fn cgc4_outbound_send_then_delivery_receipt() {
     let ext = ext.expect("provider id assigned");
 
     // Delivery receipt (idempotent) — first flips to delivered + publishes; a redelivered receipt is a no-op.
-    svc.mark_delivered("whatsapp", &ext, &sink).await.unwrap();
-    svc.mark_delivered("whatsapp", &ext, &sink).await.unwrap();
+    svc.mark_delivered("whatsapp", company, &ext, &sink).await.unwrap();
+    svc.mark_delivered("whatsapp", company, &ext, &sink).await.unwrap();
     let status2: String = sqlx::query_scalar("SELECT status::text FROM communication.messages WHERE id=$1")
         .bind(msg).fetch_one(&pool).await.unwrap();
     assert_eq!(status2, "delivered");
