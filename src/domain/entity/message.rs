@@ -282,6 +282,9 @@ impl backbone_orm::EntityRepoMeta for Message {
     fn search_fields() -> &'static [&'static str] {
         &["body"]
     }
+    fn company_field() -> Option<&'static str> {
+        Some("company_id")
+    }
 }
 
 /// Builder for Message entity

@@ -8,7 +8,7 @@
 //! ## Usage from other modules
 //!
 //! ```text
-//! use communication::exports::{MessageDto, CommunicationQueryService};
+//! use communication::exports::{MessageDto};
 //! ```
 
 mod types;
@@ -33,9 +33,6 @@ pub use events::*;
 /// - `ThreadDto` - Data transfer object for Thread
 /// - `ThreadSummary` - Summary view of Thread
 /// - `ThreadId` - Type-safe ID wrapper
-///
-/// ## Public Services
-/// - `CommunicationQueryService` - Read-only queries
 ///
 /// ## Public Events
 /// - `MessageCreatedEvent` - Published when Message is created
