@@ -24,6 +24,12 @@ config:
       - graphql
       - grpc
       - proto
+      # value-object emits standalone value_objects/ files (Timestamps/Actors/Metadata)
+      # that nothing consumes — the @audit_metadata directive already emits the inline
+      # AuditMetadata struct in domain/entity/mod.rs, which is what the entities use.
+      # The generated domain/mod.rs never declares `pub mod value_objects`, so the dir
+      # was orphaned dead code on every regen. Disabled here so the dir stays gone.
+      - value-object
 
 # Reuse sapiens for user identity (actors) — logical refs, no DB constraint.
 external_imports:
