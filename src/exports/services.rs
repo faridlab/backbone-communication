@@ -5,63 +5,132 @@
 //! These services provide the public API for other modules.
 //! They only expose read operations - writes go through events.
 
-use std::sync::Arc;
-
-use anyhow::Result;
-use async_trait::async_trait;
-use uuid::Uuid;
-
-use super::types::*;
-
-// ============================================================================
-// QUERY SERVICE TRAIT
-// ============================================================================
-
-/// Public query service for Communication module
-///
-/// This trait defines read-only operations that other modules can use.
-/// Implementations should NOT expose internal domain logic.
-#[async_trait]
-pub trait CommunicationQueryService: Send + Sync {
-    /// Get Message by ID
-    async fn get_message(&self, id: MessageId) -> Result<Option<MessageDto>>;
-
-    /// Get Message summary by ID
-    async fn get_message_summary(&self, id: MessageId) -> Result<Option<MessageSummary>>;
-
-    /// Check if Message exists
-    async fn message_exists(&self, id: MessageId) -> Result<bool>;
-
-    /// Get Thread by ID
-    async fn get_thread(&self, id: ThreadId) -> Result<Option<ThreadDto>>;
-
-    /// Get Thread summary by ID
-    async fn get_thread_summary(&self, id: ThreadId) -> Result<Option<ThreadSummary>>;
-
-    /// Check if Thread exists
-    async fn thread_exists(&self, id: ThreadId) -> Result<bool>;
-
-}
-
-// ============================================================================
-// QUERY SERVICE IMPLEMENTATION
-// ============================================================================
-
-/// Default implementation of CommunicationQueryService
-pub struct CommunicationQueryServiceImpl<R> {
-    repository: Arc<R>,
-}
-
-impl<R> CommunicationQueryServiceImpl<R> {
-    pub fn new(repository: Arc<R>) -> Self {
-        Self { repository }
-    }
-}
 
 // ============================================================================
 // CUSTOM SERVICES
 // ============================================================================
 
 // <<< CUSTOM SERVICES START >>>
-// Add custom public services here
+use std::sync::Arc;
+
+use anyhow::Result;
+use async_trait::async_trait;
+
+use super::types::*;
+use crate::application::service::{MessageService, ThreadService};
+use crate::domain::entity::{Message, Thread};
+
+// ----------------------------------------------------------------------------
+// Public READ contract for sibling modules.
+//
+// This is the module's deliberate outward read interface — the read-side
+// counterpart to the validated write path (`CommunicationWriteService`). Sibling
+// modules should depend on this trait (or its DTOs), never on the internal
+// `Message`/`Thread` aggregates. Reads are scoped to the caller's company by the
+// RLS fence at the repository layer, so a DTO returned here already belongs to
+// the tenant the connection is fenced to.
+// ----------------------------------------------------------------------------
+
+#[async_trait]
+pub trait CommunicationQueryService: Send + Sync {
+    /// Fetch a Message by ID.
+    async fn get_message(&self, id: MessageId) -> Result<Option<MessageDto>>;
+    /// Fetch a Message summary by ID.
+    async fn get_message_summary(&self, id: MessageId) -> Result<Option<MessageSummary>>;
+    /// Whether a (non-deleted) Message exists for the ID.
+    async fn message_exists(&self, id: MessageId) -> Result<bool>;
+    /// Fetch a Thread by ID.
+    async fn get_thread(&self, id: ThreadId) -> Result<Option<ThreadDto>>;
+    /// Fetch a Thread summary by ID.
+    async fn get_thread_summary(&self, id: ThreadId) -> Result<Option<ThreadSummary>>;
+    /// Whether a (non-deleted) Thread exists for the ID.
+    async fn thread_exists(&self, id: ThreadId) -> Result<bool>;
+}
+
+fn message_to_dto(m: Message) -> MessageDto {
+    MessageDto {
+        metadata: serde_json::to_value(&m.metadata).unwrap_or_default(),
+        id: MessageId(m.id),
+        thread_id: m.thread_id,
+        company_id: m.company_id,
+        direction: m.direction,
+        channel: m.channel,
+        external_id: m.external_id,
+        address_from: m.address_from,
+        address_to: m.address_to,
+        body: m.body,
+        status: m.status,
+        failure_reason: m.failure_reason,
+        occurred_at: m.occurred_at,
+    }
+}
+
+fn thread_to_dto(t: Thread) -> ThreadDto {
+    ThreadDto {
+        metadata: serde_json::to_value(&t.metadata).unwrap_or_default(),
+        id: ThreadId(t.id),
+        company_id: t.company_id,
+        channel: t.channel,
+        party_id: t.party_id,
+        subject_type: t.subject_type,
+        subject_id: t.subject_id,
+        external_ref: t.external_ref,
+        status: t.status,
+        last_message_at: t.last_message_at,
+    }
+}
+
+/// Default [`CommunicationQueryService`] — delegates reads to the generic CRUD
+/// services, which carry the company RLS fence. Cheap to construct per use.
+pub struct CommunicationQueryServiceImpl {
+    message_service: Arc<MessageService>,
+    thread_service: Arc<ThreadService>,
+}
+
+impl CommunicationQueryServiceImpl {
+    pub fn new(message_service: Arc<MessageService>, thread_service: Arc<ThreadService>) -> Self {
+        Self { message_service, thread_service }
+    }
+}
+
+#[async_trait]
+impl CommunicationQueryService for CommunicationQueryServiceImpl {
+    async fn get_message(&self, id: MessageId) -> Result<Option<MessageDto>> {
+        Ok(self
+            .message_service
+            .find_by_id(&id.0.to_string())
+            .await?
+            .map(message_to_dto))
+    }
+
+    async fn get_message_summary(&self, id: MessageId) -> Result<Option<MessageSummary>> {
+        Ok(self.message_service.find_by_id(&id.0.to_string()).await?.map(|m| MessageSummary {
+            id: MessageId(m.id),
+            status: m.status,
+        }))
+    }
+
+    async fn message_exists(&self, id: MessageId) -> Result<bool> {
+        Ok(self.message_service.find_by_id(&id.0.to_string()).await?.is_some())
+    }
+
+    async fn get_thread(&self, id: ThreadId) -> Result<Option<ThreadDto>> {
+        Ok(self
+            .thread_service
+            .find_by_id(&id.0.to_string())
+            .await?
+            .map(thread_to_dto))
+    }
+
+    async fn get_thread_summary(&self, id: ThreadId) -> Result<Option<ThreadSummary>> {
+        Ok(self.thread_service.find_by_id(&id.0.to_string()).await?.map(|t| ThreadSummary {
+            id: ThreadId(t.id),
+            status: t.status,
+        }))
+    }
+
+    async fn thread_exists(&self, id: ThreadId) -> Result<bool> {
+        Ok(self.thread_service.find_by_id(&id.0.to_string()).await?.is_some())
+    }
+}
 // <<< CUSTOM SERVICES END >>>

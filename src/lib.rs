@@ -23,6 +23,7 @@ pub mod infrastructure;
 pub mod application;
 pub mod presentation;
 pub mod seeders;
+pub mod exports;
 
 // Re-exports for convenience - Domain entities
 pub use domain::entity::*;
@@ -54,8 +55,15 @@ use sqlx::PgPool;
 /// let router = communication.all_crud_routes();
 /// ```
 pub struct CommunicationModule {
-    pub message_service: Arc<MessageService>,
-    pub thread_service: Arc<ThreadService>,
+    pub(crate) message_service: Arc<MessageService>,
+    pub(crate) thread_service: Arc<ThreadService>,
+    // <<< CUSTOM FIELDS
+    /// The validated write path for the communication domain (idempotent inbound
+    /// ingest, thread routing, outbound send/deliver). This is the module's
+    /// deliberate outward write contract — the front door, in contrast to the
+    /// unguarded generic CRUD mutators on the sibling services.
+    pub(crate) write_service: Arc<crate::application::service::CommunicationWriteService>,
+    // END CUSTOM
 }
 
 impl CommunicationModule {
@@ -85,10 +93,47 @@ impl CommunicationModule {
     /// mount exposes unguarded writes. Compose a guarded router (read + validated
     /// writes) for production, or call `all_crud_routes()` to opt into the full
     /// unguarded surface explicitly.
-    #[deprecated(note = "mounts unvalidated generic CRUD on every entity; compose a guarded router for production, or call all_crud_routes() for the intentional full/unguarded surface")]
+    #[deprecated(note = "mounts unvalidated generic CRUD; prefer readonly_routes() + validated writes, or all_crud_routes() for the full/unguarded surface")]
     pub fn routes(&self) -> Router {
         self.all_crud_routes()
     }
+
+    /// Read-only routes for every entity (GET endpoints only) — the safe base.
+    ///
+    /// Generic mutation can't reach here, so this surface cannot bypass a
+    /// validated write service's invariants. Use this as the production base and
+    /// merge validated write routes (or a write service's HTTP layer) onto it.
+    pub fn readonly_routes(&self) -> Router {
+        use presentation::http::{
+            create_message_read_routes,
+            create_thread_read_routes,
+        };
+
+        Router::new()
+            .merge(create_message_read_routes(self.message_service.clone()))
+            .merge(create_thread_read_routes(self.thread_service.clone()))
+    }
+
+    // <<< CUSTOM METHODS
+    /// The validated write service for the communication domain.
+    ///
+    /// Consumers should call this (not the generic CRUD mutators) for any production
+    /// write: it enforces idempotent inbound ingest (`unique(channel, external_id)`),
+    /// thread routing onto `party_id`, and the outbound queue/sent/failed/delivered
+    /// transitions.
+    pub fn write_service(&self) -> Arc<crate::application::service::CommunicationWriteService> {
+        self.write_service.clone()
+    }
+
+    /// The outward READ contract for sibling modules (`CommunicationQueryService`),
+    /// ready-constructed over the same company-scoped services. Cheap to build per use.
+    pub fn query_service(&self) -> crate::exports::CommunicationQueryServiceImpl {
+        crate::exports::CommunicationQueryServiceImpl::new(
+            self.message_service.clone(),
+            self.thread_service.clone(),
+        )
+    }
+    // END CUSTOM
 }
 
 /// Builder for CommunicationModule
@@ -125,6 +170,11 @@ impl CommunicationModuleBuilder {
         // Thread service
         let thread_repository = Arc::new(ThreadRepository::new(db_pool.clone()));
         let thread_service = Arc::new(ThreadService::with_repository(thread_repository.clone()));
+        // <<< CUSTOM
+        let write_service = Arc::new(
+            crate::application::service::CommunicationWriteService::new(db_pool.clone()),
+        );
+        // END CUSTOM
 
         // <<< CUSTOM
         // END CUSTOM
@@ -133,6 +183,7 @@ impl CommunicationModuleBuilder {
             message_service,
             thread_service,
             // <<< CUSTOM
+            write_service,
             // END CUSTOM
         })
     }
