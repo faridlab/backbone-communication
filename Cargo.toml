@@ -17,14 +17,14 @@ path = "src/lib.rs"
 # or `rev = "<commit-sha>"`. Cargo dedupes the git fetch — the repo is only
 # cloned once even though four crates reference it.
 # -----------------------------------------------------------------------------
-backbone-core = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.9", features = ["postgres"] }
-backbone-orm = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.9" }
-backbone-auth = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.9" }
-backbone-messaging = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.9" }
+backbone-core = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.17", features = ["postgres"] }
+backbone-orm = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.17" }
+backbone-auth = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.17" }
+backbone-messaging = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.17" }
 # Transactional outbox — the routing event (MessageReceived) is staged in the SAME tx as the message
 # insert, so it commits atomically and can never be lost between commit and publish. Framework plumbing
 # (sqlx + serde only), NOT a horizontal module edge.
-backbone-outbox = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.9", features = ["multi_tenant"] }
+backbone-outbox = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.17", features = ["multi_tenant"] }
 
 # Core async runtime and serialization
 tokio = { version = "1.0", features = ["full"] }
@@ -92,3 +92,4 @@ rand = "0.8"
 # backbone-support module via an in-test event bridge (the composing service's job). Dev-dependency ONLY —
 # the shipped library has ZERO normal Cargo edge to support; routing is an event, not a driven call.
 backbone-support = { path = "../backbone-support" }
+
