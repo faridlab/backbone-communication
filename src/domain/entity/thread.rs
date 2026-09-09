@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
+use super::AuditMetadata;
 use super::Channel;
 use super::ThreadStatus;
-use super::AuditMetadata;
 
 /// Strongly-typed ID for Thread
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -13,9 +13,15 @@ use super::AuditMetadata;
 pub struct ThreadId(pub Uuid);
 
 impl ThreadId {
-    pub fn new(id: Uuid) -> Self { Self(id) }
-    pub fn generate() -> Self { Self(Uuid::new_v4()) }
-    pub fn into_inner(self) -> Uuid { self.0 }
+    pub fn new(id: Uuid) -> Self {
+        Self(id)
+    }
+    pub fn generate() -> Self {
+        Self(Uuid::new_v4())
+    }
+    pub fn into_inner(self) -> Uuid {
+        self.0
+    }
 }
 
 impl std::fmt::Display for ThreadId {
@@ -32,26 +38,33 @@ impl std::str::FromStr for ThreadId {
 }
 
 impl From<Uuid> for ThreadId {
-    fn from(id: Uuid) -> Self { Self(id) }
+    fn from(id: Uuid) -> Self {
+        Self(id)
+    }
 }
 
 impl From<ThreadId> for Uuid {
-    fn from(id: ThreadId) -> Self { id.0 }
+    fn from(id: ThreadId) -> Self {
+        id.0
+    }
 }
 
 impl AsRef<Uuid> for ThreadId {
-    fn as_ref(&self) -> &Uuid { &self.0 }
+    fn as_ref(&self) -> &Uuid {
+        &self.0
+    }
 }
 
 impl std::ops::Deref for ThreadId {
     type Target = Uuid;
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
 pub struct Thread {
     pub id: Uuid,
-    pub company_id: Uuid,
     pub channel: Channel,
     pub party_id: Option<Uuid>,
     pub subject_type: Option<String>,
@@ -67,14 +80,13 @@ pub struct Thread {
 impl Thread {
     /// Create a builder for Thread
     pub fn builder() -> ThreadBuilder {
-        ThreadBuilder::default()
+        <ThreadBuilder as Default>::default()
     }
 
     /// Create a new Thread with required fields
-    pub fn new(company_id: Uuid, channel: Channel, status: ThreadStatus) -> Self {
+    pub fn new(channel: Channel, status: ThreadStatus) -> Self {
         Self {
             id: Uuid::new_v4(),
-            company_id,
             channel,
             party_id: None,
             subject_type: None,
@@ -141,7 +153,6 @@ impl Thread {
         &self.status
     }
 
-
     // ==========================================================
     // Fluent Setters (with_* for optional fields)
     // ==========================================================
@@ -184,29 +195,40 @@ impl Thread {
     pub fn apply_patch(&mut self, fields: std::collections::HashMap<String, serde_json::Value>) {
         for (key, value) in fields {
             match key.as_str() {
-                "company_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.company_id = v; }
-                }
                 "channel" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.channel = v; }
+                    if let Ok(v) = serde_json::from_value(value) {
+                        self.channel = v;
+                    }
                 }
                 "party_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.party_id = v; }
+                    if let Ok(v) = serde_json::from_value(value) {
+                        self.party_id = v;
+                    }
                 }
                 "subject_type" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.subject_type = v; }
+                    if let Ok(v) = serde_json::from_value(value) {
+                        self.subject_type = v;
+                    }
                 }
                 "subject_id" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.subject_id = v; }
+                    if let Ok(v) = serde_json::from_value(value) {
+                        self.subject_id = v;
+                    }
                 }
                 "external_ref" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.external_ref = v; }
+                    if let Ok(v) = serde_json::from_value(value) {
+                        self.external_ref = v;
+                    }
                 }
                 "status" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.status = v; }
+                    if let Ok(v) = serde_json::from_value(value) {
+                        self.status = v;
+                    }
                 }
                 "last_message_at" => {
-                    if let Ok(v) = serde_json::from_value(value) { self.last_message_at = v; }
+                    if let Ok(v) = serde_json::from_value(value) {
+                        self.last_message_at = v;
+                    }
                 }
                 _ => {} // ignore unknown fields
             }
@@ -262,7 +284,6 @@ impl backbone_orm::EntityRepoMeta for Thread {
     fn column_types() -> std::collections::HashMap<String, String> {
         let mut m = std::collections::HashMap::new();
         m.insert("id".to_string(), "uuid".to_string());
-        m.insert("company_id".to_string(), "uuid".to_string());
         m.insert("party_id".to_string(), "uuid".to_string());
         m.insert("subject_id".to_string(), "uuid".to_string());
         m.insert("channel".to_string(), "channel".to_string());
@@ -272,9 +293,6 @@ impl backbone_orm::EntityRepoMeta for Thread {
     fn search_fields() -> &'static [&'static str] {
         &[]
     }
-    fn company_field() -> Option<&'static str> {
-        Some("company_id")
-    }
 }
 
 /// Builder for Thread entity
@@ -283,7 +301,6 @@ impl backbone_orm::EntityRepoMeta for Thread {
 /// System fields (id, metadata, timestamps) are auto-initialized.
 #[derive(Debug, Clone, Default)]
 pub struct ThreadBuilder {
-    company_id: Option<Uuid>,
     channel: Option<Channel>,
     party_id: Option<Uuid>,
     subject_type: Option<String>,
@@ -294,12 +311,6 @@ pub struct ThreadBuilder {
 }
 
 impl ThreadBuilder {
-    /// Set the company_id field (required)
-    pub fn company_id(mut self, value: Uuid) -> Self {
-        self.company_id = Some(value);
-        self
-    }
-
     /// Set the channel field (default: `Channel::default()`)
     pub fn channel(mut self, value: Channel) -> Self {
         self.channel = Some(value);
@@ -346,17 +357,14 @@ impl ThreadBuilder {
     ///
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<Thread, String> {
-        let company_id = self.company_id.ok_or_else(|| "company_id is required".to_string())?;
-
         Ok(Thread {
             id: Uuid::new_v4(),
-            company_id,
-            channel: self.channel.unwrap_or(Channel::default()),
+            channel: self.channel.unwrap_or_default(),
             party_id: self.party_id,
             subject_type: self.subject_type,
             subject_id: self.subject_id,
             external_ref: self.external_ref,
-            status: self.status.unwrap_or(ThreadStatus::default()),
+            status: self.status.unwrap_or_default(),
             last_message_at: self.last_message_at,
             metadata: AuditMetadata::default(),
         })

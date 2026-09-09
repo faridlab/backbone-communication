@@ -5,20 +5,13 @@
 //! DDD Repository traits - define persistence contracts for aggregates.
 //! Implementations should be in the infrastructure layer.
 
-
 pub mod message_repository;
 pub mod thread_repository;
 
 // Re-exports
 pub use message_repository::{
-    MessageRepository,
-    MessagePaginationParams,
-    MessagePaginatedResult,
-    MessageFilter,
+    MessageFilter, MessagePaginatedResult, MessagePaginationParams, MessageRepository,
 };
 pub use thread_repository::{
-    ThreadRepository,
-    ThreadPaginationParams,
-    ThreadPaginatedResult,
-    ThreadFilter,
+    ThreadFilter, ThreadPaginatedResult, ThreadPaginationParams, ThreadRepository,
 };

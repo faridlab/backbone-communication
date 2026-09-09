@@ -5,11 +5,11 @@
 //! This trait defines the repository contract for the Thread aggregate.
 //! Implementation is in the infrastructure layer.
 
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
 use uuid::Uuid;
 
-use crate::domain::entity::{Thread, Channel, ThreadStatus};
+use crate::domain::entity::{Channel, Thread, ThreadStatus};
 
 /// Pagination parameters for list queries
 #[derive(Debug, Clone, Default)]
@@ -44,7 +44,6 @@ pub struct ThreadPaginatedResult {
 /// Filter parameters for list queries
 #[derive(Debug, Clone, Default)]
 pub struct ThreadFilter {
-    pub company_id: Option<Uuid>,
     pub channel: Option<Channel>,
     pub party_id: Option<Uuid>,
     pub subject_type: Option<String>,
@@ -56,7 +55,12 @@ pub struct ThreadFilter {
 impl ThreadFilter {
     /// Check if any filter is set
     pub fn has_filters(&self) -> bool {
-        self.company_id.is_some() || self.channel.is_some() || self.party_id.is_some() || self.subject_type.is_some() || self.subject_id.is_some() || self.external_ref.is_some() || self.status.is_some()
+        self.channel.is_some()
+            || self.party_id.is_some()
+            || self.subject_type.is_some()
+            || self.subject_id.is_some()
+            || self.external_ref.is_some()
+            || self.status.is_some()
     }
 }
 
@@ -66,7 +70,6 @@ impl ThreadFilter {
 /// Implementations should be in the infrastructure layer.
 #[async_trait]
 pub trait ThreadRepository: Send + Sync {
-
     // =========================================================================
     // Core CRUD Operations
     // =========================================================================
@@ -94,7 +97,11 @@ pub trait ThreadRepository: Send + Sync {
     async fn list(&self, params: ThreadPaginationParams) -> Result<ThreadPaginatedResult>;
 
     /// List thread with pagination and filters
-    async fn list_with_filters(&self, params: ThreadPaginationParams, filters: ThreadFilter) -> Result<ThreadPaginatedResult>;
+    async fn list_with_filters(
+        &self,
+        params: ThreadPaginationParams,
+        filters: ThreadFilter,
+    ) -> Result<ThreadPaginatedResult>;
 
     /// Count all thread entities
     async fn count(&self) -> Result<u64>;

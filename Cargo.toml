@@ -26,6 +26,11 @@ backbone-messaging = { git = "https://github.com/faridlab/backbone-framework", t
 # (sqlx + serde only), NOT a horizontal module edge.
 backbone-outbox = { git = "https://github.com/faridlab/backbone-framework", tag = "v2.7.17", features = ["multi_tenant"] }
 
+# OpenAPI schema derive. The schema generator emits ungated `use utoipa::ToSchema;`
+# in every entity and DTO file, so the dep is unconditional even though the
+# `derive(ToSchema)` itself is feature-gated to `openapi`.
+utoipa = { version = "5", features = ["chrono", "uuid"] }
+
 # Core async runtime and serialization
 tokio = { version = "1.0", features = ["full"] }
 async-trait = "0.1"

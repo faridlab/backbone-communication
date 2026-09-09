@@ -12,7 +12,7 @@ use anyhow::Result;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use backbone_orm::company_scope;
+use backbone_orm::org_scope;
 
 use crate::domain::entity::Thread;
 
@@ -23,13 +23,13 @@ pub const TABLE_NAME: &str = "communication.threads";
 ///
 /// All standard CRUD, soft-delete, pagination, and bulk methods are
 /// provided automatically via `Deref` to `backbone_orm::GenericCrudRepository`.
-pub struct ThreadRepository(
-    backbone_orm::GenericCrudRepository<Thread, backbone_orm::SoftDelete>,
-);
+pub struct ThreadRepository(backbone_orm::GenericCrudRepository<Thread, backbone_orm::SoftDelete>);
 
 impl std::ops::Deref for ThreadRepository {
     type Target = backbone_orm::GenericCrudRepository<Thread, backbone_orm::SoftDelete>;
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl ThreadRepository {
@@ -50,7 +50,6 @@ pub struct RoutedThreadRow {
 /// The exact row an inbound-routed thread open writes — carries the webhook's subject hint.
 pub struct NewRoutedThreadRow<'a> {
     pub id: Uuid,
-    pub company_id: Uuid,
     pub channel: &'a str,
     pub party_id: Option<Uuid>,
     pub external_ref: Option<&'a str>,
@@ -62,7 +61,6 @@ pub struct NewRoutedThreadRow<'a> {
 /// opened thread is linked later via [`ThreadRepository::set_subject`], as the original write did.
 pub struct NewThreadRow<'a> {
     pub id: Uuid,
-    pub company_id: Uuid,
     pub channel: &'a str,
     pub party_id: Option<Uuid>,
     pub external_ref: Option<&'a str>,
@@ -70,14 +68,15 @@ pub struct NewThreadRow<'a> {
 
 /// What an outbound send needs to know about its thread before it queues a message.
 pub struct ThreadSendRow {
-    pub company_id: Uuid,
     pub channel: String,
     pub status: String,
 }
 
 fn to_routed(row: &sqlx::postgres::PgRow) -> RoutedThreadRow {
     RoutedThreadRow {
-        id: row.get("id"), subject_type: row.get("subject_type"), subject_id: row.get("subject_id"),
+        id: row.get("id"),
+        subject_type: row.get("subject_type"),
+        subject_id: row.get("subject_id"),
     }
 }
 
@@ -86,23 +85,22 @@ fn to_routed(row: &sqlx::postgres::PgRow) -> RoutedThreadRow {
 impl ThreadRepository {
     /// Routing key #1: the most recent OPEN thread for a provider conversation handle.
     ///
-    /// Takes the CALLER'S connection — it runs inside the inbound tx, which already has the webhook's
-    /// company bound (`bind_company_on`); don't re-bind here. The explicit `company_id=$1` predicate
-    /// stays as defense-in-depth on top of the RLS fence (ADR-0008).
+    /// Takes the CALLER'S connection — it runs inside the inbound tx, onto which the caller has
+    /// already relayed any ambient org scope; don't re-bind here.
     pub async fn find_open_by_external_ref(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
         channel: &str,
         external_ref: &str,
     ) -> Result<Option<RoutedThreadRow>, sqlx::Error> {
         let row = sqlx::query(
             r#"SELECT id, subject_type, subject_id FROM communication.threads
-               WHERE company_id=$1 AND channel=$2::channel AND external_ref=$3
+               WHERE channel=$1::channel AND external_ref=$2
                  AND status='open'::thread_status AND (metadata->>'deleted_at') IS NULL
                ORDER BY last_message_at DESC NULLS LAST LIMIT 1"#,
         )
-        .bind(company_id).bind(channel).bind(external_ref)
+        .bind(channel)
+        .bind(external_ref)
         .fetch_optional(conn)
         .await?;
         Ok(row.as_ref().map(to_routed))
@@ -113,17 +111,17 @@ impl ThreadRepository {
     pub async fn find_open_by_party(
         &self,
         conn: &mut sqlx::PgConnection,
-        company_id: Uuid,
         channel: &str,
         party_id: Uuid,
     ) -> Result<Option<RoutedThreadRow>, sqlx::Error> {
         let row = sqlx::query(
             r#"SELECT id, subject_type, subject_id FROM communication.threads
-               WHERE company_id=$1 AND channel=$2::channel AND party_id=$3
+               WHERE channel=$1::channel AND party_id=$2
                  AND status='open'::thread_status AND (metadata->>'deleted_at') IS NULL
                ORDER BY last_message_at DESC NULLS LAST LIMIT 1"#,
         )
-        .bind(company_id).bind(channel).bind(party_id)
+        .bind(channel)
+        .bind(party_id)
         .fetch_optional(conn)
         .await?;
         Ok(row.as_ref().map(to_routed))
@@ -138,11 +136,15 @@ impl ThreadRepository {
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
             r#"INSERT INTO communication.threads
-                 (id, company_id, channel, party_id, external_ref, subject_type, subject_id, status)
-               VALUES ($1,$2,$3::channel,$4,$5,$6,$7,'open'::thread_status)"#,
+                 (id, channel, party_id, external_ref, subject_type, subject_id, status)
+               VALUES ($1,$2::channel,$3,$4,$5,$6,'open'::thread_status)"#,
         )
-        .bind(t.id).bind(t.company_id).bind(t.channel).bind(t.party_id).bind(t.external_ref)
-        .bind(t.subject_type).bind(t.subject_id)
+        .bind(t.id)
+        .bind(t.channel)
+        .bind(t.party_id)
+        .bind(t.external_ref)
+        .bind(t.subject_type)
+        .bind(t.subject_id)
         .execute(conn)
         .await?;
         Ok(())
@@ -150,20 +152,24 @@ impl ThreadRepository {
 
     /// Open a thread explicitly (outbound-initiated conversation).
     ///
-    /// A write outside any transaction; the caller wraps it in `with_company_scope(Some(company_id))` —
-    /// the company is an argument, and that scope satisfies the INSERT's WITH CHECK fence (ADR-0008).
+    /// Rides the request-dedicated connection when the composing service bound a scope — under a
+    /// decorated deployment the fence's WITH CHECK governs the row; with no scope bound this is a
+    /// plain insert.
     pub async fn insert_thread(
         &self,
         pool: &PgPool,
         t: &NewThreadRow<'_>,
     ) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query(
-                r#"INSERT INTO communication.threads (id, company_id, channel, party_id, external_ref, status)
-                   VALUES ($1,$2,$3::channel,$4,$5,'open'::thread_status)"#,
+                r#"INSERT INTO communication.threads (id, channel, party_id, external_ref, status)
+                   VALUES ($1,$2::channel,$3,$4,'open'::thread_status)"#,
             )
-            .bind(t.id).bind(t.company_id).bind(t.channel).bind(t.party_id).bind(t.external_ref),
+            .bind(t.id)
+            .bind(t.channel)
+            .bind(t.party_id)
+            .bind(t.external_ref),
         )
         .await?;
         Ok(())
@@ -172,9 +178,9 @@ impl ThreadRepository {
     /// Attach a thread to the business object it concerns. Returns the rows affected so the caller can
     /// turn a miss into a domain error.
     ///
-    /// ID-only: no company argument. The update rides the REQUEST-dedicated connection (established by
-    /// `company_auth`), which carries the caller's `app.company_id`; RLS fences it so another company's
-    /// thread simply isn't matched.
+    /// ID-only. Rides the request-dedicated connection when the composing service bound a scope —
+    /// another unit's thread then simply isn't matched (fail closed) — and runs plainly when none
+    /// is bound.
     pub async fn set_subject(
         &self,
         pool: &PgPool,
@@ -182,41 +188,44 @@ impl ThreadRepository {
         subject_type: &str,
         subject_id: Uuid,
     ) -> Result<u64, sqlx::Error> {
-        let done = company_scope::execute_scoped(
+        let done = org_scope::execute_scoped(
             pool,
             sqlx::query(
                 r#"UPDATE communication.threads SET subject_type=$2, subject_id=$3
                    WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
             )
-            .bind(thread_id).bind(subject_type).bind(subject_id),
+            .bind(thread_id)
+            .bind(subject_type)
+            .bind(subject_id),
         )
         .await?;
         Ok(done.rows_affected())
     }
 
-    /// Read the company/channel/status an outbound send needs. ID-only, same RLS contract as
-    /// [`Self::set_subject`] — the caller binds the thread's own company on the writes that follow.
+    /// Read the channel/status an outbound send needs. ID-only, same connection discipline as
+    /// [`Self::set_subject`].
     pub async fn fetch_for_send(
         &self,
         pool: &PgPool,
         thread_id: Uuid,
     ) -> Result<Option<ThreadSendRow>, sqlx::Error> {
-        let row = company_scope::fetch_optional_row_scoped(
+        let row = org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
-                r#"SELECT company_id, channel::text AS channel, status::text AS status
+                r#"SELECT channel::text AS channel, status::text AS status
                    FROM communication.threads WHERE id=$1 AND (metadata->>'deleted_at') IS NULL"#,
             )
             .bind(thread_id),
         )
         .await?;
         Ok(row.map(|r| ThreadSendRow {
-            company_id: r.get("company_id"), channel: r.get("channel"), status: r.get("status"),
+            channel: r.get("channel"),
+            status: r.get("status"),
         }))
     }
 
     /// Bump `last_message_at` inside the CALLER'S transaction, so it commits with the message insert.
-    /// The caller has already bound the company on it — don't re-bind here.
+    /// The caller has already relayed any ambient org scope onto it — don't re-bind here.
     pub async fn touch_last_message_on(
         &self,
         conn: &mut sqlx::PgConnection,
@@ -229,14 +238,14 @@ impl ThreadRepository {
         Ok(())
     }
 
-    /// Bump `last_message_at` outside any transaction (the outbound-send path). The caller wraps this in
-    /// `with_company_scope(Some(company_id))` using the company it read off the thread.
+    /// Bump `last_message_at` outside any transaction (the outbound-send path). Same connection
+    /// discipline as [`Self::insert_thread`].
     pub async fn touch_last_message(
         &self,
         pool: &PgPool,
         thread_id: Uuid,
     ) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query("UPDATE communication.threads SET last_message_at = now() WHERE id=$1")
                 .bind(thread_id),
@@ -246,9 +255,9 @@ impl ThreadRepository {
     }
 
     /// Close a thread. CAS-gated on `open`; returns the rows affected so the caller can turn a no-op into
-    /// a domain error. ID-only, same RLS contract as [`Self::set_subject`].
+    /// a domain error. ID-only, same connection discipline as [`Self::set_subject`].
     pub async fn mark_closed(&self, pool: &PgPool, thread_id: Uuid) -> Result<u64, sqlx::Error> {
-        let done = company_scope::execute_scoped(
+        let done = org_scope::execute_scoped(
             pool,
             sqlx::query(
                 r#"UPDATE communication.threads SET status='closed'::thread_status

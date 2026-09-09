@@ -5,9 +5,9 @@
 //! Returns an `EntityValidator<Message>` pre-loaded with schema-derived
 //! field rules. Extend in the `// <<< CUSTOM` zone.
 
-use backbone_core::{EntityValidator, ValidationErrors, ValidationError};
-use backbone_core::{OptionalNotBlank, RequiredString};
 use crate::domain::entity::Message;
+use backbone_core::{EntityValidator, ValidationError, ValidationErrors};
+use backbone_core::{OptionalNotBlank, RequiredString};
 
 /// Validator type alias for Message entities.
 pub type MessageValidator = EntityValidator<Message>;
@@ -15,11 +15,19 @@ pub type MessageValidator = EntityValidator<Message>;
 /// Build a validator for Message with all schema-defined field rules.
 pub fn message_validator() -> MessageValidator {
     EntityValidator::new()
-        .rule(OptionalNotBlank::new("external_id", |e: &Message| e.external_id.as_deref()))
-        .rule(OptionalNotBlank::new("address_from", |e: &Message| e.address_from.as_deref()))
-        .rule(OptionalNotBlank::new("address_to", |e: &Message| e.address_to.as_deref()))
+        .rule(OptionalNotBlank::new("external_id", |e: &Message| {
+            e.external_id.as_deref()
+        }))
+        .rule(OptionalNotBlank::new("address_from", |e: &Message| {
+            e.address_from.as_deref()
+        }))
+        .rule(OptionalNotBlank::new("address_to", |e: &Message| {
+            e.address_to.as_deref()
+        }))
         .rule(RequiredString::new("body", |e: &Message| &e.body))
-        .rule(OptionalNotBlank::new("failure_reason", |e: &Message| e.failure_reason.as_deref()))
+        .rule(OptionalNotBlank::new("failure_reason", |e: &Message| {
+            e.failure_reason.as_deref()
+        }))
     // <<< CUSTOM RULES
     // END CUSTOM RULES
 }

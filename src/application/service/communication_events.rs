@@ -10,11 +10,12 @@ use uuid::Uuid;
 
 /// An inbound message was recorded on a thread — the signal CRM/support route on. Carries everything a
 /// consumer needs to act (who it's from, what it concerns, the body) so it never re-queries this module.
+/// Tenancy: none, by design (ADR-0029) — the event carries no tenant key; a consumer that needs one
+/// names it from its own request context.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct MessageReceived {
     pub message_id: Uuid,
     pub thread_id: Uuid,
-    pub company_id: Uuid,
     pub channel: String,
     pub party_id: Option<Uuid>,
     pub subject_type: Option<String>,
@@ -28,8 +29,14 @@ pub struct MessageReceived {
 #[serde(tag = "type")]
 pub enum CommunicationEvent {
     MessageReceived(MessageReceived),
-    MessageDelivered { message_id: Uuid, external_id: String },
-    MessageFailed { message_id: Uuid, reason: String },
+    MessageDelivered {
+        message_id: Uuid,
+        external_id: String,
+    },
+    MessageFailed {
+        message_id: Uuid,
+        reason: String,
+    },
 }
 
 /// Sink the write path publishes to. A consuming service supplies its own (bus, outbox, …).

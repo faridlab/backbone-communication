@@ -5,9 +5,9 @@
 //! DTOs provide a clean separation between domain entities and API
 //! representations, with validation and OpenAPI documentation support.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 #[cfg(feature = "openapi")]
 #[cfg(feature = "openapi")]
@@ -16,10 +16,10 @@ use utoipa::ToSchema;
 #[cfg(feature = "validation")]
 use validator::Validate;
 
-use crate::domain::entity::Message;
 use crate::domain::entity::AuditMetadata;
 use crate::domain::entity::Channel;
 use crate::domain::entity::Direction;
+use crate::domain::entity::Message;
 use crate::domain::entity::MessageStatus;
 
 // =============================================================================
@@ -35,24 +35,36 @@ use crate::domain::entity::MessageStatus;
 #[cfg_attr(feature = "validation", derive(Validate))]
 #[serde(rename_all = "camelCase")]
 pub struct CreateMessageDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "550e8400-e29b-41d4-a716-446655440000")
+    )]
     #[serde(alias = "thread_id")]
     pub thread_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     pub direction: Direction,
     pub channel: Channel,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "external_id")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "external_id"
+    )]
     pub external_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "address_from")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "address_from"
+    )]
     pub address_from: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "address_to")]
     pub address_to: Option<String>,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub body: String,
     pub status: MessageStatus,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "failure_reason")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "failure_reason"
+    )]
     pub failure_reason: Option<String>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
     #[serde(alias = "occurred_at")]
@@ -72,24 +84,36 @@ pub struct CreateMessageDto {
 #[cfg_attr(feature = "validation", derive(Validate))]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateMessageDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "550e8400-e29b-41d4-a716-446655440000")
+    )]
     #[serde(alias = "thread_id")]
     pub thread_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     pub direction: Direction,
     pub channel: Channel,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "external_id")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "external_id"
+    )]
     pub external_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "address_from")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "address_from"
+    )]
     pub address_from: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "address_to")]
     pub address_to: Option<String>,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub body: String,
     pub status: MessageStatus,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "failure_reason")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "failure_reason"
+    )]
     pub failure_reason: Option<String>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
     #[serde(alias = "occurred_at")]
@@ -109,12 +133,12 @@ pub struct UpdateMessageDto {
 #[cfg_attr(feature = "validation", derive(Validate))]
 #[serde(rename_all = "camelCase")]
 pub struct PatchMessageDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "550e8400-e29b-41d4-a716-446655440000")
+    )]
     #[serde(skip_serializing_if = "Option::is_none", alias = "thread_id")]
     pub thread_id: Option<Uuid>,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub direction: Option<Direction>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -140,7 +164,16 @@ pub struct PatchMessageDto {
 impl PatchMessageDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.thread_id.is_some() || self.company_id.is_some() || self.direction.is_some() || self.channel.is_some() || self.external_id.is_some() || self.address_from.is_some() || self.address_to.is_some() || self.body.is_some() || self.status.is_some() || self.failure_reason.is_some() || self.occurred_at.is_some()
+        self.thread_id.is_some()
+            || self.direction.is_some()
+            || self.channel.is_some()
+            || self.external_id.is_some()
+            || self.address_from.is_some()
+            || self.address_to.is_some()
+            || self.body.is_some()
+            || self.status.is_some()
+            || self.failure_reason.is_some()
+            || self.occurred_at.is_some()
     }
 }
 
@@ -156,12 +189,16 @@ impl PatchMessageDto {
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct MessageResponseDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "550e8400-e29b-41d4-a716-446655440000")
+    )]
     pub id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "550e8400-e29b-41d4-a716-446655440000")
+    )]
     pub thread_id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     pub direction: Direction,
     pub channel: Channel,
     pub external_id: Option<String>,
@@ -231,8 +268,8 @@ impl MessageListResponseDto {
 pub struct MessageSummaryDto {
     pub id: Uuid,
     pub thread_id: Uuid,
-    pub company_id: Uuid,
     pub direction: Direction,
+    pub channel: Channel,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -245,7 +282,6 @@ impl From<Message> for MessageResponseDto {
         Self {
             id: entity.id,
             thread_id: entity.thread_id,
-            company_id: entity.company_id,
             direction: entity.direction,
             channel: entity.channel,
             external_id: entity.external_id,
@@ -266,8 +302,8 @@ impl From<Message> for MessageSummaryDto {
         Self {
             id: entity.id,
             thread_id: entity.thread_id,
-            company_id: entity.company_id,
             direction: entity.direction,
+            channel: entity.channel,
             created_at,
         }
     }
@@ -278,7 +314,6 @@ impl From<CreateMessageDto> for Message {
         Self {
             id: Uuid::new_v4(),
             thread_id: dto.thread_id,
-            company_id: dto.company_id,
             direction: dto.direction,
             channel: dto.channel,
             external_id: dto.external_id,
@@ -298,7 +333,6 @@ impl From<&Message> for MessageResponseDto {
         Self {
             id: entity.id.clone(),
             thread_id: entity.thread_id.clone(),
-            company_id: entity.company_id.clone(),
             direction: entity.direction.clone(),
             channel: entity.channel.clone(),
             external_id: entity.external_id.clone(),
@@ -322,7 +356,6 @@ impl backbone_core::FromCreateDto<CreateMessageDto> for Message {
 impl backbone_core::ApplyUpdateDto<UpdateMessageDto> for Message {
     fn apply_update(mut self, dto: UpdateMessageDto) -> backbone_core::ServiceResult<Self> {
         self.thread_id = dto.thread_id;
-        self.company_id = dto.company_id;
         self.direction = dto.direction;
         self.channel = dto.channel;
         self.external_id = dto.external_id;
@@ -344,4 +377,3 @@ impl backbone_core::ApplyUpdateDto<UpdateMessageDto> for Message {
 // Add custom DTOs specific to Message here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
-

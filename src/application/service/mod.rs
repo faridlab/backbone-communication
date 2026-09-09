@@ -11,18 +11,18 @@ pub mod message_service;
 pub mod thread_service;
 
 // <<< CUSTOM
-pub mod communication_ports;
 pub mod communication_events;
+pub mod communication_ports;
 pub mod communication_write_service;
 // END CUSTOM
 
 pub use message_service::MessageService;
 pub use thread_service::ThreadService;
 // <<< CUSTOM
-pub use communication_ports::{ChannelAck, ChannelPort, ChannelRejected, OutboundSend};
 pub use communication_events::{
     CommunicationEvent, CommunicationEventSink, LoggingSink, MessageReceived,
 };
+pub use communication_ports::{ChannelAck, ChannelPort, ChannelRejected, OutboundSend};
 pub use communication_write_service::{
     CommError, CommunicationWriteService, InboundMessage, InboundOutcome,
 };

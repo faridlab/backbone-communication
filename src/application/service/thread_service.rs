@@ -7,9 +7,9 @@
 
 use backbone_core::GenericCrudService;
 
-use crate::presentation::dto::{CreateThreadDto, UpdateThreadDto};
 use crate::domain::entity::Thread;
 use crate::infrastructure::persistence::ThreadRepository;
+use crate::presentation::dto::{CreateThreadDto, UpdateThreadDto};
 
 /// Application service for Thread entities.
 ///
@@ -25,12 +25,8 @@ use crate::infrastructure::persistence::ThreadRepository;
 ///     // add domain-specific dependencies here
 /// }
 /// ```
-pub type ThreadService = GenericCrudService<
-    Thread,
-    CreateThreadDto,
-    UpdateThreadDto,
-    ThreadRepository,
->;
+pub type ThreadService =
+    GenericCrudService<Thread, CreateThreadDto, UpdateThreadDto, ThreadRepository>;
 
 // <<< CUSTOM
 // END CUSTOM

@@ -10,20 +10,12 @@ pub mod thread_dto;
 
 // Re-exports
 pub use message_dto::{
-    CreateMessageDto,
-    UpdateMessageDto,
-    PatchMessageDto,
-    MessageResponseDto,
-    MessageListResponseDto,
-    MessageSummaryDto,
+    CreateMessageDto, MessageListResponseDto, MessageResponseDto, MessageSummaryDto,
+    PatchMessageDto, UpdateMessageDto,
 };
 pub use thread_dto::{
-    CreateThreadDto,
+    CreateThreadDto, PatchThreadDto, ThreadListResponseDto, ThreadResponseDto, ThreadSummaryDto,
     UpdateThreadDto,
-    PatchThreadDto,
-    ThreadResponseDto,
-    ThreadListResponseDto,
-    ThreadSummaryDto,
 };
 
 // Common pagination types
@@ -49,8 +41,12 @@ pub struct PaginationParams {
     pub sort_order: Option<String>,
 }
 
-fn default_page() -> u32 { 1 }
-fn default_per_page() -> u32 { 20 }
+fn default_page() -> u32 {
+    1
+}
+fn default_per_page() -> u32 {
+    20
+}
 
 /// API response wrapper
 #[derive(Debug, Clone, Serialize)]
@@ -75,7 +71,11 @@ pub struct ApiError {
 
 impl<T> ApiResponse<T> {
     pub fn ok(data: T) -> Self {
-        Self { success: true, data: Some(data), error: None }
+        Self {
+            success: true,
+            data: Some(data),
+            error: None,
+        }
     }
 
     pub fn err(code: impl Into<String>, message: impl Into<String>) -> Self {

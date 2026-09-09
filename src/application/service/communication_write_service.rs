@@ -4,14 +4,24 @@
 //! a redelivery must not create a second message nor re-publish `MessageReceived`), route them onto a
 //! thread, and send outbound messages through the `ChannelPort`. Posts NO GL. Threads link to the party
 //! and (optionally) the lead/issue/order they concern via a polymorphic logical reference.
+//!
+//! Tenancy: none, by design (ADR-0029). The module is tenant-agnostic — no tenant key on any
+//! write, no scope binding of its own. The COMPOSING service owns the posture: when it drives
+//! these paths under an auth middleware that binds a row scope (e.g. `with_org_request_scope`),
+//! the database fence owns tenant isolation; a deployment that mounts them unfenced gets an
+//! unfenced module. Multi-statement transactions here relay an ambient scope onto the
+//! transaction when one is bound, and stay plain otherwise. The ONE exception is the durable
+//! routing event: its outbox mirror row is company-keyed (it mirrors the framework-owned
+//! outbox table, whose fence this module does not own), so that key is sourced fail-closed
+//! from the ambient org scope.
 
-use backbone_orm::company_scope;
+use backbone_orm::org_scope;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::infrastructure::persistence::{
-    MessageRepository, NewInboundMessageRow, NewOutboundMessageRow, NewRoutedThreadRow, NewThreadRow,
-    ThreadRepository,
+    MessageRepository, NewInboundMessageRow, NewOutboundMessageRow, NewRoutedThreadRow,
+    NewThreadRow, ThreadRepository,
 };
 
 use super::communication_events::*;
@@ -29,11 +39,15 @@ pub enum CommError {
     InvalidState(&'static str),
     #[error("channel rejected: {0}")]
     ChannelRejected(String),
+    /// The durable routing event's outbox mirror row is company-keyed (the outbox table mirrors
+    /// the framework-owned shape, whose fence this module does not own), but no org scope
+    /// carrying a company node was bound on this task. Fails closed rather than guessing a key.
+    #[error("no company in the ambient org scope — staging the routing event requires one (composition-installed tenancy, ADR-0029)")]
+    NoCompanyScope,
 }
 
 /// An inbound message as delivered by a channel provider (a webhook).
 pub struct InboundMessage {
-    pub company_id: Uuid,
     pub channel: String, // whatsapp | email | sms
     /// The provider's message id — the dedup key. Required for inbound (webhooks carry one).
     pub external_id: String,
@@ -65,7 +79,11 @@ impl CommunicationWriteService {
     pub fn new(pool: PgPool) -> Self {
         let messages = MessageRepository::new(pool.clone());
         let threads = ThreadRepository::new(pool.clone());
-        Self { pool, messages, threads }
+        Self {
+            pool,
+            messages,
+            threads,
+        }
     }
 
     /// Record an inbound message and publish `MessageReceived` — **exactly once per (channel,
@@ -78,54 +96,72 @@ impl CommunicationWriteService {
         events: &dyn CommunicationEventSink,
     ) -> Result<InboundOutcome, CommError> {
         if m.external_id.trim().is_empty() {
-            return Err(CommError::Invalid("inbound message needs a provider external_id".into()));
+            return Err(CommError::Invalid(
+                "inbound message needs a provider external_id".into(),
+            ));
         }
         if m.body.is_empty() {
             return Err(CommError::Invalid("inbound message needs a body".into()));
         }
         // Fast path: already seen this provider message → return the original, publish nothing.
-        // RLS scope (ADR-0008), DTO-company pattern: the webhook payload names the company, so every
-        // read/write below is fenced to it explicitly (correct for non-request callers too).
-        if let Some(row) = company_scope::with_company_scope(
-            Some(m.company_id),
-            self.messages.find_by_external_id(&self.pool, &m.channel, &m.external_id),
-        ).await?
+        // Under a composing service's row fence (RLS) the scope bound on the request connection
+        // limits what is visible; with no fence mounted, this is a plain lookup.
+        if let Some(row) = self
+            .messages
+            .find_by_external_id(&self.pool, &m.channel, &m.external_id)
+            .await?
         {
             return Ok(InboundOutcome {
-                thread_id: row.thread_id, message_id: row.id, duplicate: true,
+                thread_id: row.thread_id,
+                message_id: row.id,
+                duplicate: true,
             });
         }
 
         let mut tx = self.pool.begin().await?;
-        company_scope::bind_company_on(&mut tx, m.company_id).await?;
+        // Relay the ambient request scope onto this transaction, when one is bound, so the
+        // claim/route/touch/outbox unit runs fenced under a decorated deployment. A module that
+        // knows nothing about tenancy invents no scope of its own — unfenced callers skip this.
+        if let Some(scope) = org_scope::current_org_scope() {
+            org_scope::bind_org_scope_on(&mut *tx, &scope).await?;
+        }
         let routed = self.resolve_or_open_thread(&mut tx, &m).await?;
         let thread_id = routed.id;
 
         // Insert gated on the unique (channel, external_id) — if we lost a race, the row is absent.
-        let inserted = self.messages.claim_inbound(&mut tx, &NewInboundMessageRow {
-            id: Uuid::new_v4(),
-            thread_id,
-            company_id: m.company_id,
-            channel: &m.channel,
-            external_id: &m.external_id,
-            address_from: m.address_from.as_deref(),
-            address_to: m.address_to.as_deref(),
-            body: &m.body,
-        }).await?;
+        let inserted = self
+            .messages
+            .claim_inbound(
+                &mut tx,
+                &NewInboundMessageRow {
+                    id: Uuid::new_v4(),
+                    thread_id,
+                    channel: &m.channel,
+                    external_id: &m.external_id,
+                    address_from: m.address_from.as_deref(),
+                    address_to: m.address_to.as_deref(),
+                    body: &m.body,
+                },
+            )
+            .await?;
 
         let Some(message_id) = inserted else {
             // Lost the race — discard the thread we may have opened; return the winner's message.
             tx.rollback().await?;
-            let row = company_scope::with_company_scope(
-                Some(m.company_id),
-                self.messages.fetch_by_external_id(&self.pool, &m.channel, &m.external_id),
-            ).await?;
+            let row = self
+                .messages
+                .fetch_by_external_id(&self.pool, &m.channel, &m.external_id)
+                .await?;
             return Ok(InboundOutcome {
-                thread_id: row.thread_id, message_id: row.id, duplicate: true,
+                thread_id: row.thread_id,
+                message_id: row.id,
+                duplicate: true,
             });
         };
 
-        self.threads.touch_last_message_on(&mut tx, thread_id).await?;
+        self.threads
+            .touch_last_message_on(&mut tx, thread_id)
+            .await?;
 
         // Stage the routing event in the SAME tx as the message insert, so it commits atomically. This is
         // what makes routing exactly-once and DURABLE — a crash between commit and the in-proc publish
@@ -135,14 +171,27 @@ impl CommunicationWriteService {
         // falling back to the webhook hint only for a thread's first message — so a follow-up reply routes
         // to the already-open work item instead of spawning a duplicate (completeness council 2026-07-08).
         let received = MessageReceived {
-            message_id, thread_id, company_id: m.company_id, channel: m.channel.clone(),
+            message_id,
+            thread_id,
+            channel: m.channel.clone(),
             party_id: m.party_id,
             subject_type: routed.subject_type.or_else(|| m.subject_type.clone()),
             subject_id: routed.subject_id.or(m.subject_id),
-            address_from: m.address_from.clone(), body: m.body.clone(),
+            address_from: m.address_from.clone(),
+            body: m.body.clone(),
         };
+        // The outbox mirror row is company-keyed (it mirrors the framework-owned outbox table,
+        // whose fence this module does not own). That key is the MIRROR's domain parameter
+        // (composition-installed tenancy, ADR-0029) — source it from the ambient org scope and
+        // fail closed when the caller carries none, rather than guessing.
+        let mirror_company = org_scope::current_org_scope()
+            .and_then(|s| s.legacy_company_id())
+            .ok_or(CommError::NoCompanyScope)?;
         let record = backbone_outbox::OutboxRecord::new(
-            "MessageReceived", "Message", message_id.to_string(), m.company_id,
+            "MessageReceived",
+            "Message",
+            message_id.to_string(),
+            mirror_company,
             serde_json::to_value(&received).map_err(|e| CommError::Invalid(e.to_string()))?,
             chrono::Utc::now(),
         );
@@ -154,35 +203,52 @@ impl CommunicationWriteService {
 
         // In-proc convenience delivery (immediate); the outbox above is the durable backstop.
         events.publish(&CommunicationEvent::MessageReceived(received));
-        Ok(InboundOutcome { thread_id, message_id, duplicate: false })
+        Ok(InboundOutcome {
+            thread_id,
+            message_id,
+            duplicate: false,
+        })
     }
 
     /// Open a thread explicitly (outbound-initiated conversation).
     pub async fn open_thread(
-        &self, company_id: Uuid, channel: &str, party_id: Option<Uuid>, external_ref: Option<String>,
+        &self,
+        channel: &str,
+        party_id: Option<Uuid>,
+        external_ref: Option<String>,
     ) -> Result<Uuid, CommError> {
         let id = Uuid::new_v4();
-        // RLS scope (ADR-0008), param-company pattern: the company is an argument — fence to it.
-        company_scope::with_company_scope(
-            Some(company_id),
-            self.threads.insert_thread(&self.pool, &NewThreadRow {
-                id,
-                company_id,
-                channel,
-                party_id,
-                external_ref: external_ref.as_deref(),
-            }),
-        ).await?;
+        // Under a composing service's row fence (RLS), the scope bound on the request
+        // connection governs this insert; with no fence mounted, this is a plain insert.
+        self.threads
+            .insert_thread(
+                &self.pool,
+                &NewThreadRow {
+                    id,
+                    channel,
+                    party_id,
+                    external_ref: external_ref.as_deref(),
+                },
+            )
+            .await?;
         Ok(id)
     }
 
     /// Attach a thread to the business object it concerns (a lead, an issue, an order) after routing.
-    pub async fn link_thread(&self, thread_id: Uuid, subject_type: &str, subject_id: Uuid) -> Result<(), CommError> {
-        // RLS scope (ADR-0008), ID-only pattern: identified by thread id alone, with no company to
-        // scope from. The update rides the REQUEST-dedicated connection (established by
-        // `company_auth`), which carries the caller's `app.company_id`; RLS fences it so another
-        // company's thread simply isn't matched and this reports NotFound.
-        let n = self.threads.set_subject(&self.pool, thread_id, subject_type, subject_id).await?;
+    pub async fn link_thread(
+        &self,
+        thread_id: Uuid,
+        subject_type: &str,
+        subject_id: Uuid,
+    ) -> Result<(), CommError> {
+        // Identified by thread id alone. Under a composing service's row fence (RLS) the scope
+        // bound on the request connection limits what is visible, so another unit's thread
+        // simply isn't matched and this reports NotFound; with no fence mounted it is a plain
+        // update.
+        let n = self
+            .threads
+            .set_subject(&self.pool, thread_id, subject_type, subject_id)
+            .await?;
         if n != 1 {
             return Err(CommError::NotFound("thread"));
         }
@@ -203,9 +269,9 @@ impl CommunicationWriteService {
         if body.is_empty() {
             return Err(CommError::Invalid("outbound message needs a body".into()));
         }
-        // RLS scope (ADR-0008), ID-only pattern: identified by thread id alone — no company argument to
-        // scope from up front. This read rides the REQUEST-dedicated connection, whose `app.company_id`
-        // fences it. Having read the thread, we bind its company explicitly on the writes below.
+        // Identified by thread id alone. Under a composing service's row fence (RLS) the scope
+        // bound on the request connection limits what is visible; with no fence mounted, this
+        // is a plain read.
         let thread = self
             .threads
             .fetch_for_send(&self.pool, thread_id)
@@ -214,40 +280,47 @@ impl CommunicationWriteService {
         if thread.status != "open" {
             return Err(CommError::InvalidState("thread is closed"));
         }
-        let company_id = thread.company_id;
         let channel = thread.channel;
 
         let message_id = Uuid::new_v4();
-        company_scope::with_company_scope(
-            Some(company_id),
-            self.messages.insert_outbound(&self.pool, &NewOutboundMessageRow {
-                id: message_id,
-                thread_id,
-                company_id,
-                channel: &channel,
-                address_to: &address_to,
-                body: &body,
-            }),
-        ).await?;
+        self.messages
+            .insert_outbound(
+                &self.pool,
+                &NewOutboundMessageRow {
+                    id: message_id,
+                    thread_id,
+                    channel: &channel,
+                    address_to: &address_to,
+                    body: &body,
+                },
+            )
+            .await?;
 
-        match port.send(&OutboundSend { channel: channel.clone(), to: address_to, body }).await {
+        match port
+            .send(&OutboundSend {
+                channel: channel.clone(),
+                to: address_to,
+                body,
+            })
+            .await
+        {
             Ok(ack) => {
-                company_scope::with_company_scope(
-                    Some(company_id),
-                    self.messages.mark_sent(&self.pool, message_id, &ack.external_id),
-                ).await?;
-                company_scope::with_company_scope(
-                    Some(company_id),
-                    self.threads.touch_last_message(&self.pool, thread_id),
-                ).await?;
+                self.messages
+                    .mark_sent(&self.pool, message_id, &ack.external_id)
+                    .await?;
+                self.threads
+                    .touch_last_message(&self.pool, thread_id)
+                    .await?;
                 Ok(message_id)
             }
             Err(rej) => {
-                company_scope::with_company_scope(
-                    Some(company_id),
-                    self.messages.mark_failed(&self.pool, message_id, &rej.message),
-                ).await?;
-                events.publish(&CommunicationEvent::MessageFailed { message_id, reason: rej.code.clone() });
+                self.messages
+                    .mark_failed(&self.pool, message_id, &rej.message)
+                    .await?;
+                events.publish(&CommunicationEvent::MessageFailed {
+                    message_id,
+                    reason: rej.code.clone(),
+                });
                 Err(CommError::ChannelRejected(rej.code))
             }
         }
@@ -256,37 +329,34 @@ impl CommunicationWriteService {
     /// Record a provider delivery receipt for an outbound message (idempotent — a redelivered receipt is
     /// a no-op). Publishes `MessageDelivered` on the first transition.
     ///
-    /// `company_id` scopes the lookup, so a principal of company A cannot mark company B's message
-    /// delivered by knowing its (channel, external_id) — proving *who* the caller is is not enough,
-    /// the row must be theirs. A mismatched tenant is indistinguishable from an unknown receipt (no
-    /// transition, no event), so this does not leak whether the message exists.
+    /// Isolation is the COMPOSING service's posture: under a row fence bound on the request
+    /// connection, a receipt for another unit's message simply isn't matched — indistinguishable
+    /// from an unknown receipt (no transition, no event), so this does not leak whether the
+    /// message exists. With no fence mounted, the receipt transitions by its (channel,
+    /// external_id) key alone.
     pub async fn mark_delivered(
         &self,
         channel: &str,
-        company_id: Uuid,
         external_id: &str,
         events: &dyn CommunicationEventSink,
     ) -> Result<(), CommError> {
-        // RLS scope (ADR-0008): company on the parameter — scope the receipt update so it runs with
-        // `app.company_id` set. The inbound handler for the provider's delivery callback passes the
-        // event's company; an event/job caller can no longer forget to.
-        company_scope::with_company_scope(Some(company_id), async move {
-            let moved = self.messages.mark_delivered(&self.pool, channel, external_id).await?;
-            if let Some(message_id) = moved {
-                events.publish(&CommunicationEvent::MessageDelivered {
-                    message_id,
-                    external_id: external_id.to_string(),
-                });
-            }
-            Ok(())
-        })
-        .await
+        let moved = self
+            .messages
+            .mark_delivered(&self.pool, channel, external_id)
+            .await?;
+        if let Some(message_id) = moved {
+            events.publish(&CommunicationEvent::MessageDelivered {
+                message_id,
+                external_id: external_id.to_string(),
+            });
+        }
+        Ok(())
     }
 
     /// Close a thread (no further sends).
     pub async fn close_thread(&self, thread_id: Uuid) -> Result<(), CommError> {
-        // RLS scope (ADR-0008), ID-only pattern: identified by thread id alone; the update rides the
-        // request-dedicated connection, whose `app.company_id` fences it.
+        // Identified by thread id alone; under a composing service's row fence the scope bound
+        // on the request connection limits what is visible.
         let n = self.threads.mark_closed(&self.pool, thread_id).await?;
         if n != 1 {
             return Err(CommError::InvalidState("thread is not open"));
@@ -299,7 +369,7 @@ impl CommunicationWriteService {
     /// name the work item a follow-up belongs to (a consumer appends instead of opening a duplicate).
     ///
     /// Runs entirely on the CALLER'S tx — the thread it opens must roll back with the message insert when
-    /// the dedup claim loses its race. The caller has already bound the webhook's company on that tx.
+    /// the dedup claim loses its race. The caller has already relayed any ambient org scope onto that tx.
     async fn resolve_or_open_thread(
         &self,
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -309,37 +379,49 @@ impl CommunicationWriteService {
         if let Some(ext) = m.external_ref.as_ref() {
             if let Some(row) = self
                 .threads
-                .find_open_by_external_ref(&mut **tx, m.company_id, &m.channel, ext)
+                .find_open_by_external_ref(&mut **tx, &m.channel, ext)
                 .await?
             {
                 return Ok(RoutedThread {
-                    id: row.id, subject_type: row.subject_type, subject_id: row.subject_id,
+                    id: row.id,
+                    subject_type: row.subject_type,
+                    subject_id: row.subject_id,
                 });
             }
         }
         if let Some(party) = m.party_id {
             if let Some(row) = self
                 .threads
-                .find_open_by_party(&mut **tx, m.company_id, &m.channel, party)
+                .find_open_by_party(&mut **tx, &m.channel, party)
                 .await?
             {
                 return Ok(RoutedThread {
-                    id: row.id, subject_type: row.subject_type, subject_id: row.subject_id,
+                    id: row.id,
+                    subject_type: row.subject_type,
+                    subject_id: row.subject_id,
                 });
             }
         }
         // No open thread — open one carrying the webhook's subject hint (if any).
         let id = Uuid::new_v4();
-        self.threads.open_routed_thread(&mut **tx, &NewRoutedThreadRow {
+        self.threads
+            .open_routed_thread(
+                &mut **tx,
+                &NewRoutedThreadRow {
+                    id,
+                    channel: &m.channel,
+                    party_id: m.party_id,
+                    external_ref: m.external_ref.as_deref(),
+                    subject_type: m.subject_type.as_deref(),
+                    subject_id: m.subject_id,
+                },
+            )
+            .await?;
+        Ok(RoutedThread {
             id,
-            company_id: m.company_id,
-            channel: &m.channel,
-            party_id: m.party_id,
-            external_ref: m.external_ref.as_deref(),
-            subject_type: m.subject_type.as_deref(),
+            subject_type: m.subject_type.clone(),
             subject_id: m.subject_id,
-        }).await?;
-        Ok(RoutedThread { id, subject_type: m.subject_type.clone(), subject_id: m.subject_id })
+        })
     }
 }
 
@@ -350,4 +432,3 @@ struct RoutedThread {
     subject_type: Option<String>,
     subject_id: Option<Uuid>,
 }
-

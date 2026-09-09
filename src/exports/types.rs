@@ -5,10 +5,10 @@
 //! These DTOs are the ONLY types other modules should use.
 //! They are decoupled from internal domain entities.
 
+use crate::domain::entity::*;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use crate::domain::entity::*;
 
 // ============================================================================
 // MESSAGE TYPES
@@ -49,7 +49,6 @@ impl From<MessageId> for Uuid {
 pub struct MessageDto {
     pub id: MessageId,
     pub thread_id: Uuid,
-    pub company_id: Uuid,
     pub direction: Direction,
     pub channel: Channel,
     pub external_id: Option<String>,
@@ -113,7 +112,6 @@ impl From<ThreadId> for Uuid {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThreadDto {
     pub id: ThreadId,
-    pub company_id: Uuid,
     pub channel: Channel,
     pub party_id: Option<Uuid>,
     pub subject_type: Option<String>,

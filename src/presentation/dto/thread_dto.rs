@@ -5,9 +5,9 @@
 //! DTOs provide a clean separation between domain entities and API
 //! representations, with validation and OpenAPI documentation support.
 
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
-use chrono::{DateTime, Utc};
 
 #[cfg(feature = "openapi")]
 #[cfg(feature = "openapi")]
@@ -16,9 +16,9 @@ use utoipa::ToSchema;
 #[cfg(feature = "validation")]
 use validator::Validate;
 
-use crate::domain::entity::Thread;
 use crate::domain::entity::AuditMetadata;
 use crate::domain::entity::Channel;
+use crate::domain::entity::Thread;
 use crate::domain::entity::ThreadStatus;
 
 // =============================================================================
@@ -34,20 +34,29 @@ use crate::domain::entity::ThreadStatus;
 #[cfg_attr(feature = "validation", derive(Validate))]
 #[serde(rename_all = "camelCase")]
 pub struct CreateThreadDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     pub channel: Channel,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "party_id")]
     pub party_id: Option<Uuid>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "subject_type")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "subject_type"
+    )]
     pub subject_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "subject_id")]
     pub subject_id: Option<Uuid>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "external_ref")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "external_ref"
+    )]
     pub external_ref: Option<String>,
     pub status: ThreadStatus,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "last_message_at")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "last_message_at"
+    )]
     pub last_message_at: Option<DateTime<Utc>>,
 }
 
@@ -64,20 +73,29 @@ pub struct CreateThreadDto {
 #[cfg_attr(feature = "validation", derive(Validate))]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateThreadDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(alias = "company_id")]
-    pub company_id: Uuid,
     pub channel: Channel,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "party_id")]
     pub party_id: Option<Uuid>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "subject_type")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "subject_type"
+    )]
     pub subject_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "subject_id")]
     pub subject_id: Option<Uuid>,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "external_ref")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "external_ref"
+    )]
     pub external_ref: Option<String>,
     pub status: ThreadStatus,
-    #[serde(default, skip_serializing_if = "Option::is_none", alias = "last_message_at")]
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "last_message_at"
+    )]
     pub last_message_at: Option<DateTime<Utc>>,
 }
 
@@ -94,9 +112,6 @@ pub struct UpdateThreadDto {
 #[cfg_attr(feature = "validation", derive(Validate))]
 #[serde(rename_all = "camelCase")]
 pub struct PatchThreadDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    #[serde(skip_serializing_if = "Option::is_none", alias = "company_id")]
-    pub company_id: Option<Uuid>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel: Option<Channel>,
     #[serde(skip_serializing_if = "Option::is_none", alias = "party_id")]
@@ -116,7 +131,13 @@ pub struct PatchThreadDto {
 impl PatchThreadDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.company_id.is_some() || self.channel.is_some() || self.party_id.is_some() || self.subject_type.is_some() || self.subject_id.is_some() || self.external_ref.is_some() || self.status.is_some() || self.last_message_at.is_some()
+        self.channel.is_some()
+            || self.party_id.is_some()
+            || self.subject_type.is_some()
+            || self.subject_id.is_some()
+            || self.external_ref.is_some()
+            || self.status.is_some()
+            || self.last_message_at.is_some()
     }
 }
 
@@ -132,10 +153,11 @@ impl PatchThreadDto {
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadResponseDto {
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
+    #[cfg_attr(
+        feature = "openapi",
+        schema(example = "550e8400-e29b-41d4-a716-446655440000")
+    )]
     pub id: Uuid,
-    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
-    pub company_id: Uuid,
     pub channel: Channel,
     pub party_id: Option<Uuid>,
     pub subject_type: Option<String>,
@@ -200,9 +222,9 @@ impl ThreadListResponseDto {
 #[serde(rename_all = "camelCase")]
 pub struct ThreadSummaryDto {
     pub id: Uuid,
-    pub company_id: Uuid,
     pub channel: Channel,
     pub party_id: Option<Uuid>,
+    pub subject_type: Option<String>,
     pub created_at: Option<DateTime<Utc>>,
 }
 
@@ -214,7 +236,6 @@ impl From<Thread> for ThreadResponseDto {
     fn from(entity: Thread) -> Self {
         Self {
             id: entity.id,
-            company_id: entity.company_id,
             channel: entity.channel,
             party_id: entity.party_id,
             subject_type: entity.subject_type,
@@ -232,9 +253,9 @@ impl From<Thread> for ThreadSummaryDto {
         let created_at = backbone_core::PersistentEntity::created_at(&entity);
         Self {
             id: entity.id,
-            company_id: entity.company_id,
             channel: entity.channel,
             party_id: entity.party_id,
+            subject_type: entity.subject_type,
             created_at,
         }
     }
@@ -244,7 +265,6 @@ impl From<CreateThreadDto> for Thread {
     fn from(dto: CreateThreadDto) -> Self {
         Self {
             id: Uuid::new_v4(),
-            company_id: dto.company_id,
             channel: dto.channel,
             party_id: dto.party_id,
             subject_type: dto.subject_type,
@@ -261,7 +281,6 @@ impl From<&Thread> for ThreadResponseDto {
     fn from(entity: &Thread) -> Self {
         Self {
             id: entity.id.clone(),
-            company_id: entity.company_id.clone(),
             channel: entity.channel.clone(),
             party_id: entity.party_id.clone(),
             subject_type: entity.subject_type.clone(),
@@ -282,7 +301,6 @@ impl backbone_core::FromCreateDto<CreateThreadDto> for Thread {
 
 impl backbone_core::ApplyUpdateDto<UpdateThreadDto> for Thread {
     fn apply_update(mut self, dto: UpdateThreadDto) -> backbone_core::ServiceResult<Self> {
-        self.company_id = dto.company_id;
         self.channel = dto.channel;
         self.party_id = dto.party_id;
         self.subject_type = dto.subject_type;
@@ -302,4 +320,3 @@ impl backbone_core::ApplyUpdateDto<UpdateThreadDto> for Thread {
 // Add custom DTOs specific to Thread here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
-

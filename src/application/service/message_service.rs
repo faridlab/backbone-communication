@@ -7,9 +7,9 @@
 
 use backbone_core::GenericCrudService;
 
-use crate::presentation::dto::{CreateMessageDto, UpdateMessageDto};
 use crate::domain::entity::Message;
 use crate::infrastructure::persistence::MessageRepository;
+use crate::presentation::dto::{CreateMessageDto, UpdateMessageDto};
 
 /// Application service for Message entities.
 ///
@@ -25,12 +25,8 @@ use crate::infrastructure::persistence::MessageRepository;
 ///     // add domain-specific dependencies here
 /// }
 /// ```
-pub type MessageService = GenericCrudService<
-    Message,
-    CreateMessageDto,
-    UpdateMessageDto,
-    MessageRepository,
->;
+pub type MessageService =
+    GenericCrudService<Message, CreateMessageDto, UpdateMessageDto, MessageRepository>;
 
 // <<< CUSTOM
 // END CUSTOM

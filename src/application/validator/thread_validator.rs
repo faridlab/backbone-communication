@@ -5,9 +5,9 @@
 //! Returns an `EntityValidator<Thread>` pre-loaded with schema-derived
 //! field rules. Extend in the `// <<< CUSTOM` zone.
 
-use backbone_core::{EntityValidator, ValidationErrors, ValidationError};
-use backbone_core::{OptionalNotBlank};
 use crate::domain::entity::Thread;
+use backbone_core::OptionalNotBlank;
+use backbone_core::{EntityValidator, ValidationError, ValidationErrors};
 
 /// Validator type alias for Thread entities.
 pub type ThreadValidator = EntityValidator<Thread>;
@@ -15,8 +15,12 @@ pub type ThreadValidator = EntityValidator<Thread>;
 /// Build a validator for Thread with all schema-defined field rules.
 pub fn thread_validator() -> ThreadValidator {
     EntityValidator::new()
-        .rule(OptionalNotBlank::new("subject_type", |e: &Thread| e.subject_type.as_deref()))
-        .rule(OptionalNotBlank::new("external_ref", |e: &Thread| e.external_ref.as_deref()))
+        .rule(OptionalNotBlank::new("subject_type", |e: &Thread| {
+            e.subject_type.as_deref()
+        }))
+        .rule(OptionalNotBlank::new("external_ref", |e: &Thread| {
+            e.external_ref.as_deref()
+        }))
     // <<< CUSTOM RULES
     // END CUSTOM RULES
 }

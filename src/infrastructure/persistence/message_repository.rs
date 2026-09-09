@@ -13,7 +13,7 @@ use anyhow::Result;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use backbone_orm::company_scope;
+use backbone_orm::org_scope;
 
 use crate::domain::entity::Message;
 
@@ -30,7 +30,9 @@ pub struct MessageRepository(
 
 impl std::ops::Deref for MessageRepository {
     type Target = backbone_orm::GenericCrudRepository<Message, backbone_orm::SoftDelete>;
-    fn deref(&self) -> &Self::Target { &self.0 }
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl MessageRepository {
@@ -55,7 +57,6 @@ pub struct MessageRefRow {
 pub struct NewInboundMessageRow<'a> {
     pub id: Uuid,
     pub thread_id: Uuid,
-    pub company_id: Uuid,
     pub channel: &'a str,
     pub external_id: &'a str,
     pub address_from: Option<&'a str>,
@@ -68,7 +69,6 @@ pub struct NewInboundMessageRow<'a> {
 pub struct NewOutboundMessageRow<'a> {
     pub id: Uuid,
     pub thread_id: Uuid,
-    pub company_id: Uuid,
     pub channel: &'a str,
     pub address_to: &'a str,
     pub body: &'a str,
@@ -79,41 +79,49 @@ pub struct NewOutboundMessageRow<'a> {
 impl MessageRepository {
     /// The inbound dedup fast path: has this provider message already been recorded?
     ///
-    /// Runs outside a transaction on the pool; the caller wraps it in
-    /// `with_company_scope(Some(company))` using the company named on the WEBHOOK payload — an inbound
-    /// webhook is not a request in the caller's tenant, so the scope must be explicit (ADR-0008).
+    /// Rides the request-dedicated connection when the composing service bound a scope — under a
+    /// decorated deployment the fence's USING clause governs what is visible; with no scope bound
+    /// this is a plain lookup.
     pub async fn find_by_external_id(
         &self,
         pool: &PgPool,
         channel: &str,
         external_id: &str,
     ) -> Result<Option<MessageRefRow>, sqlx::Error> {
-        let row = company_scope::fetch_optional_row_scoped(
+        let row = org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 "SELECT id, thread_id FROM communication.messages WHERE channel=$1::channel AND external_id=$2")
                 .bind(channel).bind(external_id),
         )
         .await?;
-        Ok(row.map(|r| MessageRefRow { id: r.get("id"), thread_id: r.get("thread_id") }))
+        Ok(row.map(|r| MessageRefRow {
+            id: r.get("id"),
+            thread_id: r.get("thread_id"),
+        }))
     }
 
-    /// Re-read the winner after a LOST dedup race — the row is known to exist, so this fetches exactly
-    /// one. Same explicit webhook-company scope as [`Self::find_by_external_id`].
+    /// Re-read the winner after a LOST dedup race — the winning row was committed before our
+    /// conflict, so this fetches exactly one. Same connection discipline as
+    /// [`Self::find_by_external_id`].
     pub async fn fetch_by_external_id(
         &self,
         pool: &PgPool,
         channel: &str,
         external_id: &str,
     ) -> Result<MessageRefRow, sqlx::Error> {
-        let r = company_scope::fetch_one_row_scoped(
+        let r = org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 "SELECT id, thread_id FROM communication.messages WHERE channel=$1::channel AND external_id=$2")
                 .bind(channel).bind(external_id),
         )
-        .await?;
-        Ok(MessageRefRow { id: r.get("id"), thread_id: r.get("thread_id") })
+        .await?
+        .ok_or(sqlx::Error::RowNotFound)?;
+        Ok(MessageRefRow {
+            id: r.get("id"),
+            thread_id: r.get("thread_id"),
+        })
     }
 
     /// Claim the (channel, external_id) dedup slot. `Ok(None)` = we lost a race and the caller must roll
@@ -121,7 +129,7 @@ impl MessageRepository {
     ///
     /// Takes the CALLER'S connection so the claim, the thread open, the thread touch, and the outbox
     /// stage all commit as ONE unit — that atomicity is what makes routing exactly-once. The caller has
-    /// already bound the webhook's company on it (`bind_company_on`) — don't re-bind here.
+    /// already relayed any ambient org scope onto it — don't re-bind here.
     pub async fn claim_inbound(
         &self,
         conn: &mut sqlx::PgConnection,
@@ -129,13 +137,13 @@ impl MessageRepository {
     ) -> Result<Option<Uuid>, sqlx::Error> {
         sqlx::query_scalar(
             r#"INSERT INTO communication.messages
-                 (id, thread_id, company_id, direction, channel, external_id, address_from, address_to,
+                 (id, thread_id, direction, channel, external_id, address_from, address_to,
                   body, status, occurred_at)
-               VALUES ($1,$2,$3,'inbound'::direction,$4::channel,$5,$6,$7,$8,'received'::message_status, now())
+               VALUES ($1,$2,'inbound'::direction,$3::channel,$4,$5,$6,$7,'received'::message_status, now())
                ON CONFLICT (channel, external_id) DO NOTHING
                RETURNING id"#,
         )
-        .bind(m.id).bind(m.thread_id).bind(m.company_id).bind(m.channel).bind(m.external_id)
+        .bind(m.id).bind(m.thread_id).bind(m.channel).bind(m.external_id)
         .bind(m.address_from).bind(m.address_to).bind(m.body)
         .fetch_optional(conn)
         .await
@@ -143,60 +151,63 @@ impl MessageRepository {
 
     /// Queue an outbound message before the channel provider is driven.
     ///
-    /// A write outside any transaction; the caller wraps it in `with_company_scope(Some(company_id))`
-    /// using the company it read off the thread, which satisfies the INSERT's WITH CHECK fence.
+    /// Rides the request-dedicated connection when the composing service bound a scope — under a
+    /// decorated deployment the fence's WITH CHECK governs the row; with no scope bound this is a
+    /// plain insert.
     pub async fn insert_outbound(
         &self,
         pool: &PgPool,
         m: &NewOutboundMessageRow<'_>,
     ) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query(
                 r#"INSERT INTO communication.messages
-                     (id, thread_id, company_id, direction, channel, address_to, body, status, occurred_at)
-                   VALUES ($1,$2,$3,'outbound'::direction,$4::channel,$5,$6,'queued'::message_status, now())"#,
+                     (id, thread_id, direction, channel, address_to, body, status, occurred_at)
+                   VALUES ($1,$2,'outbound'::direction,$3::channel,$4,$5,'queued'::message_status, now())"#,
             )
-            .bind(m.id).bind(m.thread_id).bind(m.company_id).bind(m.channel).bind(m.address_to).bind(m.body),
+            .bind(m.id).bind(m.thread_id).bind(m.channel).bind(m.address_to).bind(m.body),
         )
         .await?;
         Ok(())
     }
 
-    /// Record a provider acceptance, stamping the provider's own id. Same caller-supplied company scope
-    /// as [`Self::insert_outbound`].
+    /// Record a provider acceptance, stamping the provider's own id. Same connection discipline as
+    /// [`Self::insert_outbound`].
     pub async fn mark_sent(
         &self,
         pool: &PgPool,
         message_id: Uuid,
         external_id: &str,
     ) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query(
                 r#"UPDATE communication.messages
                    SET status='sent'::message_status, external_id=$2 WHERE id=$1"#,
             )
-            .bind(message_id).bind(external_id),
+            .bind(message_id)
+            .bind(external_id),
         )
         .await?;
         Ok(())
     }
 
-    /// Record a provider rejection. Same caller-supplied company scope as [`Self::insert_outbound`].
+    /// Record a provider rejection. Same connection discipline as [`Self::insert_outbound`].
     pub async fn mark_failed(
         &self,
         pool: &PgPool,
         message_id: Uuid,
         failure_reason: &str,
     ) -> Result<(), sqlx::Error> {
-        company_scope::execute_scoped(
+        org_scope::execute_scoped(
             pool,
             sqlx::query(
                 r#"UPDATE communication.messages
                    SET status='failed'::message_status, failure_reason=$2 WHERE id=$1"#,
             )
-            .bind(message_id).bind(failure_reason),
+            .bind(message_id)
+            .bind(failure_reason),
         )
         .await?;
         Ok(())
@@ -205,24 +216,24 @@ impl MessageRepository {
     /// Record a delivery receipt. CAS-gated on `sent`, so a redelivered receipt is a no-op and returns
     /// `Ok(None)` — that is what keeps `MessageDelivered` a first-transition-only event.
     ///
-    /// ID-only: a receipt names only (channel, external_id) — no company. Under HTTP the
-    /// request-dedicated connection carries the scope. When driven by an EVENT (a provider-callback
-    /// consumer), the CALLER must wrap this in `with_company_scope(Some(event.company_id))` — otherwise
-    /// the update fails closed.
+    /// ID-only: a receipt names only (channel, external_id). Rides the request-dedicated connection
+    /// when the composing service bound a scope — another unit's message then simply isn't matched
+    /// (fail closed) — and runs plainly when none is bound.
     pub async fn mark_delivered(
         &self,
         pool: &PgPool,
         channel: &str,
         external_id: &str,
     ) -> Result<Option<Uuid>, sqlx::Error> {
-        let row = company_scope::fetch_optional_row_scoped(
+        let row = org_scope::fetch_optional_row_scoped(
             pool,
             sqlx::query(
                 r#"UPDATE communication.messages SET status='delivered'::message_status
                    WHERE channel=$1::channel AND external_id=$2 AND status='sent'::message_status
                    RETURNING id"#,
             )
-            .bind(channel).bind(external_id),
+            .bind(channel)
+            .bind(external_id),
         )
         .await?;
         Ok(row.map(|r| r.get("id")))

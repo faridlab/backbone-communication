@@ -756,7 +756,6 @@ components:
       required:
         - id
         - thread_id
-        - company_id
         - direction
         - channel
         - body
@@ -768,9 +767,6 @@ components:
           type: string
           format: uuid
         thread_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         direction:
@@ -816,7 +812,6 @@ components:
       type: object
       required:
         - thread_id
-        - company_id
         - direction
         - channel
         - body
@@ -825,9 +820,6 @@ components:
         - metadata
       properties:
         thread_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         direction:
@@ -860,7 +852,6 @@ components:
       type: object
       required:
         - thread_id
-        - company_id
         - direction
         - channel
         - body
@@ -869,9 +860,6 @@ components:
         - metadata
       properties:
         thread_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         direction:
@@ -904,9 +892,6 @@ components:
       type: object
       properties:
         thread_id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         direction:
@@ -949,15 +934,11 @@ components:
       type: object
       required:
         - id
-        - company_id
         - channel
         - status
         - metadata
       properties:
         id:
-          type: string
-          format: uuid
-        company_id:
           type: string
           format: uuid
         channel:
@@ -1001,14 +982,10 @@ components:
     CreateThreadRequest:
       type: object
       required:
-        - company_id
         - channel
         - status
         - metadata
       properties:
-        company_id:
-          type: string
-          format: uuid
         channel:
           type: string
         party_id:
@@ -1037,14 +1014,10 @@ components:
     UpdateThreadRequest:
       type: object
       required:
-        - company_id
         - channel
         - status
         - metadata
       properties:
-        company_id:
-          type: string
-          format: uuid
         channel:
           type: string
         party_id:
@@ -1073,9 +1046,6 @@ components:
     PatchThreadRequest:
       type: object
       properties:
-        company_id:
-          type: string
-          format: uuid
         channel:
           type: string
         party_id:

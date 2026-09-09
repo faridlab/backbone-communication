@@ -5,7 +5,6 @@
 //! These services provide the public API for other modules.
 //! They only expose read operations - writes go through events.
 
-
 // ============================================================================
 // CUSTOM SERVICES
 // ============================================================================
@@ -26,9 +25,9 @@ use crate::domain::entity::{Message, Thread};
 // This is the module's deliberate outward read interface — the read-side
 // counterpart to the validated write path (`CommunicationWriteService`). Sibling
 // modules should depend on this trait (or its DTOs), never on the internal
-// `Message`/`Thread` aggregates. Reads are scoped to the caller's company by the
-// RLS fence at the repository layer, so a DTO returned here already belongs to
-// the tenant the connection is fenced to.
+// `Message`/`Thread` aggregates. Tenancy: none, by design (ADR-0029) — under a
+// composing service's row fence the scope bound on the request connection limits
+// what these reads see; with no fence mounted they are plain lookups.
 // ----------------------------------------------------------------------------
 
 #[async_trait]
@@ -52,7 +51,6 @@ fn message_to_dto(m: Message) -> MessageDto {
         metadata: serde_json::to_value(&m.metadata).unwrap_or_default(),
         id: MessageId(m.id),
         thread_id: m.thread_id,
-        company_id: m.company_id,
         direction: m.direction,
         channel: m.channel,
         external_id: m.external_id,
@@ -69,7 +67,6 @@ fn thread_to_dto(t: Thread) -> ThreadDto {
     ThreadDto {
         metadata: serde_json::to_value(&t.metadata).unwrap_or_default(),
         id: ThreadId(t.id),
-        company_id: t.company_id,
         channel: t.channel,
         party_id: t.party_id,
         subject_type: t.subject_type,
@@ -81,7 +78,7 @@ fn thread_to_dto(t: Thread) -> ThreadDto {
 }
 
 /// Default [`CommunicationQueryService`] — delegates reads to the generic CRUD
-/// services, which carry the company RLS fence. Cheap to construct per use.
+/// services. Cheap to construct per use.
 pub struct CommunicationQueryServiceImpl {
     message_service: Arc<MessageService>,
     thread_service: Arc<ThreadService>,
@@ -89,7 +86,10 @@ pub struct CommunicationQueryServiceImpl {
 
 impl CommunicationQueryServiceImpl {
     pub fn new(message_service: Arc<MessageService>, thread_service: Arc<ThreadService>) -> Self {
-        Self { message_service, thread_service }
+        Self {
+            message_service,
+            thread_service,
+        }
     }
 }
 
@@ -104,14 +104,22 @@ impl CommunicationQueryService for CommunicationQueryServiceImpl {
     }
 
     async fn get_message_summary(&self, id: MessageId) -> Result<Option<MessageSummary>> {
-        Ok(self.message_service.find_by_id(&id.0.to_string()).await?.map(|m| MessageSummary {
-            id: MessageId(m.id),
-            status: m.status,
-        }))
+        Ok(self
+            .message_service
+            .find_by_id(&id.0.to_string())
+            .await?
+            .map(|m| MessageSummary {
+                id: MessageId(m.id),
+                status: m.status,
+            }))
     }
 
     async fn message_exists(&self, id: MessageId) -> Result<bool> {
-        Ok(self.message_service.find_by_id(&id.0.to_string()).await?.is_some())
+        Ok(self
+            .message_service
+            .find_by_id(&id.0.to_string())
+            .await?
+            .is_some())
     }
 
     async fn get_thread(&self, id: ThreadId) -> Result<Option<ThreadDto>> {
@@ -123,14 +131,22 @@ impl CommunicationQueryService for CommunicationQueryServiceImpl {
     }
 
     async fn get_thread_summary(&self, id: ThreadId) -> Result<Option<ThreadSummary>> {
-        Ok(self.thread_service.find_by_id(&id.0.to_string()).await?.map(|t| ThreadSummary {
-            id: ThreadId(t.id),
-            status: t.status,
-        }))
+        Ok(self
+            .thread_service
+            .find_by_id(&id.0.to_string())
+            .await?
+            .map(|t| ThreadSummary {
+                id: ThreadId(t.id),
+                status: t.status,
+            }))
     }
 
     async fn thread_exists(&self, id: ThreadId) -> Result<bool> {
-        Ok(self.thread_service.find_by_id(&id.0.to_string()).await?.is_some())
+        Ok(self
+            .thread_service
+            .find_by_id(&id.0.to_string())
+            .await?
+            .is_some())
     }
 }
 // <<< CUSTOM SERVICES END >>>
