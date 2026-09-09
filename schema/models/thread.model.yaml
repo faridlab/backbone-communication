@@ -16,10 +16,6 @@ models:
         type: uuid
         attributes: ["@id", "@default(uuid)"]
         description: "Unique thread id"
-      company_id:
-        type: uuid
-        attributes: ["@required", "@exclude_from_foreign_key_check"]
-        description: "Org owner # logical FK to organization.Company.id"
       channel:
         type: Channel
         attributes: ["@required", "@default(whatsapp)"]
@@ -52,8 +48,11 @@ models:
         attributes: ["@audit_metadata"]
         description: "Audit metadata"
     indexes:
+      # No tenancy-leading indexes (ADR-0029): the module is tenant-agnostic. A company-leading
+      # party index and any per-unit uniques are installed by the composing service's tenancy
+      # decorator, not declared here.
       - type: index
-        fields: [company_id, party_id]
+        fields: [party_id]
       - type: index
         fields: [subject_type, subject_id]
       - type: index

@@ -21,6 +21,10 @@ user_owned:
   # makes editing them legitimate.
   - "src/infrastructure/persistence/message_repository.rs"
   - "src/infrastructure/persistence/thread_repository.rs"
+  # Hand-authored migrations (the guarded company-artifact strip — the strip's ordering guard is
+  # hand-authored logic, not schema-derived emission).
+  - "migrations/20260909112958_strip_tenancy.up.sql"
+  - "migrations/20260909112958_strip_tenancy.down.sql"
   - "tests/communication_golden_cases.rs"
   - "tests/communication_support_seam.rs"
   - "tests/integrity_probes.rs"
