@@ -14,11 +14,30 @@ use backbone_communication::application::service::communication_ports::{
 use sqlx::PgPool;
 
 pub fn dburl() -> String {
-    std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://postgres:postgres@localhost:5433/backbone_communication".into())
+    std::env::var("DATABASE_URL").unwrap_or_else(|_| {
+        "postgres://postgres:postgres@localhost:5433/backbone_communication".into()
+    })
 }
 pub async fn pool() -> PgPool {
     PgPool::connect(&dburl()).await.expect("connect")
+}
+
+/// Run `f` inside a company-anchored org request scope. The durable routing event's outbox
+/// mirror row is company-keyed (it mirrors the framework-owned outbox table), and its key is
+/// sourced from the ambient org scope, failing closed when none is bound (composition-installed
+/// tenancy, ADR-0029) — probes that drive the inbound path bind one here.
+pub async fn with_company_scope<R, F: std::future::Future<Output = R>>(
+    pool: &sqlx::PgPool,
+    company: uuid::Uuid,
+    f: F,
+) -> R {
+    backbone_orm::org_scope::with_org_request_scope(
+        pool,
+        backbone_orm::org_scope::OrgScope::for_company_unit(company),
+        f,
+    )
+    .await
+    .expect("org request scope")
 }
 
 /// A fake channel provider. Records every send; assigns a deterministic external id, unless armed to
@@ -49,7 +68,9 @@ impl ChannelPort for FakeChannel {
             return Err(ChannelRejected { code, message });
         }
         // Globally unique so parallel tests never collide on the (channel, external_id) unique index.
-        Ok(ChannelAck { external_id: format!("prov-{}", uuid::Uuid::new_v4()) })
+        Ok(ChannelAck {
+            external_id: format!("prov-{}", uuid::Uuid::new_v4()),
+        })
     }
 }
 
@@ -63,18 +84,33 @@ impl CapturingSink {
         Self::default()
     }
     pub fn received(&self) -> usize {
-        self.events.lock().unwrap().iter()
+        self.events
+            .lock()
+            .unwrap()
+            .iter()
             .filter(|e| matches!(e, CommunicationEvent::MessageReceived(_)))
             .count()
     }
     pub fn delivered(&self) -> usize {
-        self.events.lock().unwrap().iter()
+        self.events
+            .lock()
+            .unwrap()
+            .iter()
             .filter(|e| matches!(e, CommunicationEvent::MessageDelivered { .. }))
             .count()
     }
-    pub fn last_received(&self) -> backbone_communication::application::service::communication_events::MessageReceived {
-        self.events.lock().unwrap().iter().rev()
-            .find_map(|e| match e { CommunicationEvent::MessageReceived(m) => Some(m.clone()), _ => None })
+    pub fn last_received(
+        &self,
+    ) -> backbone_communication::application::service::communication_events::MessageReceived {
+        self.events
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .find_map(|e| match e {
+                CommunicationEvent::MessageReceived(m) => Some(m.clone()),
+                _ => None,
+            })
             .expect("a MessageReceived")
     }
 }

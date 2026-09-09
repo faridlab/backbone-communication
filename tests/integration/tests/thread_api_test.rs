@@ -24,7 +24,6 @@ impl TestDataGenerator for ThreadTestData {
         let now = Utc::now().to_rfc3339();
         json!({
             "id": Uuid::new_v4().to_string(),
-            "company_id": Uuid::new_v4().to_string(),
             "channel": "whatsapp",
             "party_id": null,
             "subject_type": null,
@@ -40,7 +39,6 @@ impl TestDataGenerator for ThreadTestData {
         let now = Utc::now().to_rfc3339();
         json!({
             "id": id,
-            "company_id": Uuid::new_v4().to_string(),
             "channel": "whatsapp",
             "party_id": null,
             "subject_type": null,

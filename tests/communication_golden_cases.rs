@@ -9,12 +9,17 @@ use backbone_communication::application::service::communication_events::LoggingS
 use backbone_communication::application::service::communication_write_service::*;
 use uuid::Uuid;
 
-fn inbound(company: Uuid, ext: &str, party: Option<Uuid>) -> InboundMessage {
+fn inbound(ext: &str, party: Option<Uuid>) -> InboundMessage {
     InboundMessage {
-        company_id: company, channel: "whatsapp".into(), external_id: ext.into(),
-        address_from: Some("+628123".into()), address_to: Some("+628999".into()),
-        body: "Halo, mau tanya pesanan".into(), party_id: party, external_ref: Some("wa-conv-1".into()),
-        subject_type: None, subject_id: None,
+        channel: "whatsapp".into(),
+        external_id: ext.into(),
+        address_from: Some("+628123".into()),
+        address_to: Some("+628999".into()),
+        body: "Halo, mau tanya pesanan".into(),
+        party_id: party,
+        external_ref: Some("wa-conv-1".into()),
+        subject_type: None,
+        subject_id: None,
     }
 }
 
@@ -22,11 +27,15 @@ fn inbound(company: Uuid, ext: &str, party: Option<Uuid>) -> InboundMessage {
 #[tokio::test]
 async fn cgc1_inbound_recorded_and_published() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
     let svc = CommunicationWriteService::new(pool.clone());
     let sink = CapturingSink::new();
 
-    let out = svc.receive_inbound(inbound(company, &format!("m-{}", Uuid::new_v4()), None), &sink).await.unwrap();
+    let out = with_company_scope(&pool, Uuid::new_v4(), async {
+        svc.receive_inbound(inbound(&format!("m-{}", Uuid::new_v4()), None), &sink)
+            .await
+            .unwrap()
+    })
+    .await;
     assert!(!out.duplicate);
     assert_eq!(sink.received(), 1);
     let ev = sink.last_received();
@@ -36,8 +45,12 @@ async fn cgc1_inbound_recorded_and_published() {
 
     // A thread was opened and the message recorded inbound/received.
     let (dir, status): (String, String) = sqlx::query_as(
-        "SELECT direction::text, status::text FROM communication.messages WHERE id=$1")
-        .bind(out.message_id).fetch_one(&pool).await.unwrap();
+        "SELECT direction::text, status::text FROM communication.messages WHERE id=$1",
+    )
+    .bind(out.message_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(dir, "inbound");
     assert_eq!(status, "received");
 }
@@ -47,21 +60,41 @@ async fn cgc1_inbound_recorded_and_published() {
 #[tokio::test]
 async fn cgc2_redelivery_is_idempotent() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
     let svc = CommunicationWriteService::new(pool.clone());
     let sink = CapturingSink::new();
     let ext = format!("m-{}", Uuid::new_v4());
 
-    let first = svc.receive_inbound(inbound(company, &ext, None), &sink).await.unwrap();
-    let second = svc.receive_inbound(inbound(company, &ext, None), &sink).await.unwrap();
+    let (first, second) = with_company_scope(&pool, Uuid::new_v4(), async {
+        (
+            svc.receive_inbound(inbound(&ext, None), &sink)
+                .await
+                .unwrap(),
+            svc.receive_inbound(inbound(&ext, None), &sink)
+                .await
+                .unwrap(),
+        )
+    })
+    .await;
 
     assert!(!first.duplicate);
     assert!(second.duplicate);
     assert_eq!(first.message_id, second.message_id, "same message");
-    assert_eq!(first.thread_id, second.thread_id, "same thread — no spurious thread on redelivery");
-    assert_eq!(sink.received(), 1, "published exactly once despite the redelivery");
-    let n: i64 = sqlx::query_scalar("SELECT count(*) FROM communication.messages WHERE channel='whatsapp' AND external_id=$1")
-        .bind(&ext).fetch_one(&pool).await.unwrap();
+    assert_eq!(
+        first.thread_id, second.thread_id,
+        "same thread — no spurious thread on redelivery"
+    );
+    assert_eq!(
+        sink.received(),
+        1,
+        "published exactly once despite the redelivery"
+    );
+    let n: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM communication.messages WHERE channel='whatsapp' AND external_id=$1",
+    )
+    .bind(&ext)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
     assert_eq!(n, 1, "only one row for the provider message");
 }
 
@@ -69,48 +102,80 @@ async fn cgc2_redelivery_is_idempotent() {
 #[tokio::test]
 async fn cgc3_routing_reuses_thread_for_party() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
     let party = Uuid::new_v4();
     let svc = CommunicationWriteService::new(pool.clone());
     let sink = CapturingSink::new();
 
     // Distinct external_ref so routing falls to the party rule.
-    let mut a = inbound(company, &format!("m-{}", Uuid::new_v4()), Some(party)); a.external_ref = None;
-    let mut b = inbound(company, &format!("m-{}", Uuid::new_v4()), Some(party)); b.external_ref = None;
-    let first = svc.receive_inbound(a, &sink).await.unwrap();
-    let second = svc.receive_inbound(b, &sink).await.unwrap();
+    let mut a = inbound(&format!("m-{}", Uuid::new_v4()), Some(party));
+    a.external_ref = None;
+    let mut b = inbound(&format!("m-{}", Uuid::new_v4()), Some(party));
+    b.external_ref = None;
+    let (first, second) = with_company_scope(&pool, Uuid::new_v4(), async {
+        (
+            svc.receive_inbound(a, &sink).await.unwrap(),
+            svc.receive_inbound(b, &sink).await.unwrap(),
+        )
+    })
+    .await;
 
-    assert_eq!(first.thread_id, second.thread_id, "same party+channel → one open thread");
+    assert_eq!(
+        first.thread_id, second.thread_id,
+        "same party+channel → one open thread"
+    );
     assert_eq!(sink.received(), 2, "two distinct messages published");
 }
 
 // CGC-4 — outbound send goes through the channel and lands 'sent' with the provider id; a delivery receipt
-// then marks it 'delivered' and publishes MessageDelivered exactly once.
+// then marks it 'delivered' and publishes MessageDelivered exactly once. Runs UNFENCED (no org scope
+// bound): no outbox staging sits on this path, so the module serves it with or without a fence (ADR-0029).
 #[tokio::test]
 async fn cgc4_outbound_send_then_delivery_receipt() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
     let svc = CommunicationWriteService::new(pool.clone());
     let channel = FakeChannel::new();
     let sink = CapturingSink::new();
 
-    let thread = svc.open_thread(company, "whatsapp", Some(Uuid::new_v4()), None).await.unwrap();
-    let msg = svc.send_outbound(thread, "+628123".into(), "Pesanan Anda dikirim".into(), &channel, &sink).await.unwrap();
+    let thread = svc
+        .open_thread("whatsapp", Some(Uuid::new_v4()), None)
+        .await
+        .unwrap();
+    let msg = svc
+        .send_outbound(
+            thread,
+            "+628123".into(),
+            "Pesanan Anda dikirim".into(),
+            &channel,
+            &sink,
+        )
+        .await
+        .unwrap();
     assert_eq!(channel.count(), 1, "one send reached the provider");
 
-    let (status, ext): (String, Option<String>) = sqlx::query_as(
-        "SELECT status::text, external_id FROM communication.messages WHERE id=$1")
-        .bind(msg).fetch_one(&pool).await.unwrap();
+    let (status, ext): (String, Option<String>) =
+        sqlx::query_as("SELECT status::text, external_id FROM communication.messages WHERE id=$1")
+            .bind(msg)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(status, "sent");
     let ext = ext.expect("provider id assigned");
 
     // Delivery receipt (idempotent) — first flips to delivered + publishes; a redelivered receipt is a no-op.
-    svc.mark_delivered("whatsapp", company, &ext, &sink).await.unwrap();
-    svc.mark_delivered("whatsapp", company, &ext, &sink).await.unwrap();
-    let status2: String = sqlx::query_scalar("SELECT status::text FROM communication.messages WHERE id=$1")
-        .bind(msg).fetch_one(&pool).await.unwrap();
+    svc.mark_delivered("whatsapp", &ext, &sink).await.unwrap();
+    svc.mark_delivered("whatsapp", &ext, &sink).await.unwrap();
+    let status2: String =
+        sqlx::query_scalar("SELECT status::text FROM communication.messages WHERE id=$1")
+            .bind(msg)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
     assert_eq!(status2, "delivered");
-    assert_eq!(sink.delivered(), 1, "MessageDelivered published exactly once");
+    assert_eq!(
+        sink.delivered(),
+        1,
+        "MessageDelivered published exactly once"
+    );
     let _ = LoggingSink;
 }
 
@@ -120,26 +185,45 @@ async fn cgc4_outbound_send_then_delivery_receipt() {
 #[tokio::test]
 async fn cgc5_followup_carries_linked_subject() {
     let pool = pool().await;
-    let company = Uuid::new_v4();
     let party = Uuid::new_v4();
     let svc = CommunicationWriteService::new(pool.clone());
     let sink = CapturingSink::new();
     let issue_x = Uuid::new_v4();
 
     // Msg #1 → new thread; consumer opens issue X and links the thread.
-    let mut m1 = inbound(company, &format!("m-{}", Uuid::new_v4()), Some(party));
+    let mut m1 = inbound(&format!("m-{}", Uuid::new_v4()), Some(party));
     m1.external_ref = Some("conv-append".into());
-    let first = svc.receive_inbound(m1, &sink).await.unwrap();
-    svc.link_thread(first.thread_id, "issue", issue_x).await.unwrap();
+    let first = with_company_scope(&pool, Uuid::new_v4(), async {
+        svc.receive_inbound(m1, &sink).await.unwrap()
+    })
+    .await;
+    svc.link_thread(first.thread_id, "issue", issue_x)
+        .await
+        .unwrap();
 
     // Msg #2 → a plain reply, NO subject hint, same conversation.
-    let mut m2 = inbound(company, &format!("m-{}", Uuid::new_v4()), Some(party));
+    let mut m2 = inbound(&format!("m-{}", Uuid::new_v4()), Some(party));
     m2.external_ref = Some("conv-append".into());
-    m2.subject_type = None; m2.subject_id = None;
-    let second = svc.receive_inbound(m2, &sink).await.unwrap();
+    m2.subject_type = None;
+    m2.subject_id = None;
+    let second = with_company_scope(&pool, Uuid::new_v4(), async {
+        svc.receive_inbound(m2, &sink).await.unwrap()
+    })
+    .await;
 
-    assert_eq!(first.thread_id, second.thread_id, "reply routes onto the same thread");
+    assert_eq!(
+        first.thread_id, second.thread_id,
+        "reply routes onto the same thread"
+    );
     let ev = sink.last_received();
-    assert_eq!(ev.subject_type.as_deref(), Some("issue"), "the reply names the linked work item");
-    assert_eq!(ev.subject_id, Some(issue_x), "so the consumer appends to issue X, not a duplicate");
+    assert_eq!(
+        ev.subject_type.as_deref(),
+        Some("issue"),
+        "the reply names the linked work item"
+    );
+    assert_eq!(
+        ev.subject_id,
+        Some(issue_x),
+        "so the consumer appends to issue X, not a duplicate"
+    );
 }

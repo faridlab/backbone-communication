@@ -37,4 +37,3 @@ async fn test_thread_api() {
         panic!("{} tests failed", failed.len());
     }
 }
-

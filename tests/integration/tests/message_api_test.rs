@@ -25,7 +25,6 @@ impl TestDataGenerator for MessageTestData {
         json!({
             "id": Uuid::new_v4().to_string(),
             "thread_id": Uuid::new_v4().to_string(),
-            "company_id": Uuid::new_v4().to_string(),
             "direction": "inbound",
             "channel": "whatsapp",
             "external_id": null,
@@ -44,7 +43,6 @@ impl TestDataGenerator for MessageTestData {
         json!({
             "id": id,
             "thread_id": Uuid::new_v4().to_string(),
-            "company_id": Uuid::new_v4().to_string(),
             "direction": "inbound",
             "channel": "whatsapp",
             "external_id": null,
@@ -66,7 +64,13 @@ impl TestDataGenerator for MessageTestData {
 
     async fn seed_dependencies(&self, api: &ApiTest) -> Vec<(String, String)> {
         let mut deps: Vec<(String, String)> = Vec::new();
-        if let Some(id) = super::crud_test_base::create_and_get_id(api, "/api/v1/threads", &super::thread_api_test::ThreadTestData).await {
+        if let Some(id) = super::crud_test_base::create_and_get_id(
+            api,
+            "/api/v1/threads",
+            &super::thread_api_test::ThreadTestData,
+        )
+        .await
+        {
             deps.push(("thread_id".to_string(), id));
         }
         deps
