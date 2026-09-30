@@ -5,11 +5,11 @@
 //! Tests the Message CRUD API endpoints.
 
 use chrono::Utc;
+use crate::integration::framework::ApiTest;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
 use super::crud_test_base::{CrudTestConfig, GenericCrudTest, TestDataGenerator};
-use crate::integration::framework::ApiTest;
 use crate::integration::helpers::CommonUtils;
 
 // ============================================================================
@@ -64,13 +64,7 @@ impl TestDataGenerator for MessageTestData {
 
     async fn seed_dependencies(&self, api: &ApiTest) -> Vec<(String, String)> {
         let mut deps: Vec<(String, String)> = Vec::new();
-        if let Some(id) = super::crud_test_base::create_and_get_id(
-            api,
-            "/api/v1/threads",
-            &super::thread_api_test::ThreadTestData,
-        )
-        .await
-        {
+        if let Some(id) = super::crud_test_base::create_and_get_id(api, "/api/v1/threads", &super::thread_api_test::ThreadTestData).await {
             deps.push(("thread_id".to_string(), id));
         }
         deps

@@ -3,10 +3,10 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
-use super::AuditMetadata;
-use super::Channel;
 use super::Direction;
+use super::Channel;
 use super::MessageStatus;
+use super::AuditMetadata;
 
 /// Strongly-typed ID for Message
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -14,15 +14,9 @@ use super::MessageStatus;
 pub struct MessageId(pub Uuid);
 
 impl MessageId {
-    pub fn new(id: Uuid) -> Self {
-        Self(id)
-    }
-    pub fn generate() -> Self {
-        Self(Uuid::new_v4())
-    }
-    pub fn into_inner(self) -> Uuid {
-        self.0
-    }
+    pub fn new(id: Uuid) -> Self { Self(id) }
+    pub fn generate() -> Self { Self(Uuid::new_v4()) }
+    pub fn into_inner(self) -> Uuid { self.0 }
 }
 
 impl std::fmt::Display for MessageId {
@@ -39,28 +33,20 @@ impl std::str::FromStr for MessageId {
 }
 
 impl From<Uuid> for MessageId {
-    fn from(id: Uuid) -> Self {
-        Self(id)
-    }
+    fn from(id: Uuid) -> Self { Self(id) }
 }
 
 impl From<MessageId> for Uuid {
-    fn from(id: MessageId) -> Self {
-        id.0
-    }
+    fn from(id: MessageId) -> Self { id.0 }
 }
 
 impl AsRef<Uuid> for MessageId {
-    fn as_ref(&self) -> &Uuid {
-        &self.0
-    }
+    fn as_ref(&self) -> &Uuid { &self.0 }
 }
 
 impl std::ops::Deref for MessageId {
     type Target = Uuid;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+    fn deref(&self) -> &Self::Target { &self.0 }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -88,14 +74,7 @@ impl Message {
     }
 
     /// Create a new Message with required fields
-    pub fn new(
-        thread_id: Uuid,
-        direction: Direction,
-        channel: Channel,
-        body: String,
-        status: MessageStatus,
-        occurred_at: DateTime<Utc>,
-    ) -> Self {
+    pub fn new(thread_id: Uuid, direction: Direction, channel: Channel, body: String, status: MessageStatus, occurred_at: DateTime<Utc>) -> Self {
         Self {
             id: Uuid::new_v4(),
             thread_id,
@@ -167,6 +146,7 @@ impl Message {
         &self.status
     }
 
+
     // ==========================================================
     // Fluent Setters (with_* for optional fields)
     // ==========================================================
@@ -204,54 +184,34 @@ impl Message {
         for (key, value) in fields {
             match key.as_str() {
                 "thread_id" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.thread_id = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.thread_id = v; }
                 }
                 "direction" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.direction = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.direction = v; }
                 }
                 "channel" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.channel = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.channel = v; }
                 }
                 "external_id" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.external_id = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.external_id = v; }
                 }
                 "address_from" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.address_from = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.address_from = v; }
                 }
                 "address_to" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.address_to = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.address_to = v; }
                 }
                 "body" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.body = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.body = v; }
                 }
                 "status" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.status = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.status = v; }
                 }
                 "failure_reason" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.failure_reason = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.failure_reason = v; }
                 }
                 "occurred_at" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.occurred_at = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.occurred_at = v; }
                 }
                 _ => {} // ignore unknown fields
             }
@@ -311,6 +271,7 @@ impl backbone_orm::EntityRepoMeta for Message {
         m.insert("direction".to_string(), "direction".to_string());
         m.insert("channel".to_string(), "channel".to_string());
         m.insert("status".to_string(), "message_status".to_string());
+        m.insert("occurred_at".to_string(), "timestamptz".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
@@ -401,15 +362,9 @@ impl MessageBuilder {
     ///
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<Message, String> {
-        let thread_id = self
-            .thread_id
-            .ok_or_else(|| "thread_id is required".to_string())?;
-        let direction = self
-            .direction
-            .ok_or_else(|| "direction is required".to_string())?;
-        let channel = self
-            .channel
-            .ok_or_else(|| "channel is required".to_string())?;
+        let thread_id = self.thread_id.ok_or_else(|| "thread_id is required".to_string())?;
+        let direction = self.direction.ok_or_else(|| "direction is required".to_string())?;
+        let channel = self.channel.ok_or_else(|| "channel is required".to_string())?;
         let body = self.body.ok_or_else(|| "body is required".to_string())?;
 
         Ok(Message {

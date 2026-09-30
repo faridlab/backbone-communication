@@ -18,12 +18,12 @@
 #![allow(unused_imports)]
 
 // Generated modules
-pub mod application;
 pub mod domain;
-pub mod exports;
 pub mod infrastructure;
+pub mod application;
 pub mod presentation;
 pub mod seeders;
+pub mod exports;
 
 // Re-exports for convenience - Domain entities
 pub use domain::entity::*;
@@ -38,9 +38,9 @@ pub use application::service::ThreadService;
 // Re-exports - Workflows
 pub use application::workflows::*;
 
+use std::sync::Arc;
 use axum::Router;
 use sqlx::PgPool;
-use std::sync::Arc;
 
 /// Communication module configuration
 ///
@@ -78,7 +78,10 @@ impl CommunicationModule {
     /// dependents. Prefer a guarded composition (read + validated writes) for any
     /// real deployment; use this only in trusted/admin/seeding contexts.
     pub fn all_crud_routes(&self) -> Router {
-        use presentation::http::{create_message_routes, create_thread_routes};
+        use presentation::http::{
+            create_message_routes,
+            create_thread_routes,
+        };
 
         Router::new()
             .merge(create_message_routes(self.message_service.clone()))
@@ -90,9 +93,7 @@ impl CommunicationModule {
     /// mount exposes unguarded writes. Compose a guarded router (read + validated
     /// writes) for production, or call `all_crud_routes()` to opt into the full
     /// unguarded surface explicitly.
-    #[deprecated(
-        note = "mounts unvalidated generic CRUD; prefer readonly_routes() + validated writes, or all_crud_routes() for the full/unguarded surface"
-    )]
+    #[deprecated(note = "mounts unvalidated generic CRUD; prefer readonly_routes() + validated writes, or all_crud_routes() for the full/unguarded surface")]
     pub fn routes(&self) -> Router {
         self.all_crud_routes()
     }
@@ -103,7 +104,10 @@ impl CommunicationModule {
     /// validated write service's invariants. Use this as the production base and
     /// merge validated write routes (or a write service's HTTP layer) onto it.
     pub fn readonly_routes(&self) -> Router {
-        use presentation::http::{create_message_read_routes, create_thread_read_routes};
+        use presentation::http::{
+            create_message_read_routes,
+            create_thread_read_routes,
+        };
 
         Router::new()
             .merge(create_message_read_routes(self.message_service.clone()))
@@ -140,7 +144,9 @@ pub struct CommunicationModuleBuilder {
 impl CommunicationModuleBuilder {
     /// Create a new builder
     pub fn new() -> Self {
-        Self { db_pool: None }
+        Self {
+            db_pool: None,
+        }
     }
 
     /// Set the database connection pool
@@ -154,8 +160,7 @@ impl CommunicationModuleBuilder {
 
     /// Build the module with configured dependencies
     pub fn build(self) -> anyhow::Result<CommunicationModule> {
-        let db_pool = self
-            .db_pool
+        let db_pool = self.db_pool
             .ok_or_else(|| anyhow::anyhow!("Database pool not configured"))?;
 
         // Message service

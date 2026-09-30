@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use uuid::Uuid;
 
-use super::AuditMetadata;
 use super::Channel;
 use super::ThreadStatus;
+use super::AuditMetadata;
 
 /// Strongly-typed ID for Thread
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -13,15 +13,9 @@ use super::ThreadStatus;
 pub struct ThreadId(pub Uuid);
 
 impl ThreadId {
-    pub fn new(id: Uuid) -> Self {
-        Self(id)
-    }
-    pub fn generate() -> Self {
-        Self(Uuid::new_v4())
-    }
-    pub fn into_inner(self) -> Uuid {
-        self.0
-    }
+    pub fn new(id: Uuid) -> Self { Self(id) }
+    pub fn generate() -> Self { Self(Uuid::new_v4()) }
+    pub fn into_inner(self) -> Uuid { self.0 }
 }
 
 impl std::fmt::Display for ThreadId {
@@ -38,28 +32,20 @@ impl std::str::FromStr for ThreadId {
 }
 
 impl From<Uuid> for ThreadId {
-    fn from(id: Uuid) -> Self {
-        Self(id)
-    }
+    fn from(id: Uuid) -> Self { Self(id) }
 }
 
 impl From<ThreadId> for Uuid {
-    fn from(id: ThreadId) -> Self {
-        id.0
-    }
+    fn from(id: ThreadId) -> Self { id.0 }
 }
 
 impl AsRef<Uuid> for ThreadId {
-    fn as_ref(&self) -> &Uuid {
-        &self.0
-    }
+    fn as_ref(&self) -> &Uuid { &self.0 }
 }
 
 impl std::ops::Deref for ThreadId {
     type Target = Uuid;
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
+    fn deref(&self) -> &Self::Target { &self.0 }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
@@ -153,6 +139,7 @@ impl Thread {
         &self.status
     }
 
+
     // ==========================================================
     // Fluent Setters (with_* for optional fields)
     // ==========================================================
@@ -196,39 +183,25 @@ impl Thread {
         for (key, value) in fields {
             match key.as_str() {
                 "channel" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.channel = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.channel = v; }
                 }
                 "party_id" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.party_id = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.party_id = v; }
                 }
                 "subject_type" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.subject_type = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.subject_type = v; }
                 }
                 "subject_id" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.subject_id = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.subject_id = v; }
                 }
                 "external_ref" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.external_ref = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.external_ref = v; }
                 }
                 "status" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.status = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.status = v; }
                 }
                 "last_message_at" => {
-                    if let Ok(v) = serde_json::from_value(value) {
-                        self.last_message_at = v;
-                    }
+                    if let Ok(v) = serde_json::from_value(value) { self.last_message_at = v; }
                 }
                 _ => {} // ignore unknown fields
             }
@@ -288,6 +261,7 @@ impl backbone_orm::EntityRepoMeta for Thread {
         m.insert("subject_id".to_string(), "uuid".to_string());
         m.insert("channel".to_string(), "channel".to_string());
         m.insert("status".to_string(), "thread_status".to_string());
+        m.insert("last_message_at".to_string(), "timestamptz".to_string());
         m
     }
     fn search_fields() -> &'static [&'static str] {
@@ -357,6 +331,7 @@ impl ThreadBuilder {
     ///
     /// Returns Err if any required field without a default is missing.
     pub fn build(self) -> Result<Thread, String> {
+
         Ok(Thread {
             id: Uuid::new_v4(),
             channel: self.channel.unwrap_or_default(),

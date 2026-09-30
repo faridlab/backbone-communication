@@ -5,9 +5,9 @@
 //! DTOs provide a clean separation between domain entities and API
 //! representations, with validation and OpenAPI documentation support.
 
-use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use chrono::{DateTime, Utc};
 
 #[cfg(feature = "openapi")]
 #[cfg(feature = "openapi")]
@@ -16,9 +16,9 @@ use utoipa::ToSchema;
 #[cfg(feature = "validation")]
 use validator::Validate;
 
+use crate::domain::entity::Thread;
 use crate::domain::entity::AuditMetadata;
 use crate::domain::entity::Channel;
-use crate::domain::entity::Thread;
 use crate::domain::entity::ThreadStatus;
 
 // =============================================================================
@@ -37,26 +37,14 @@ pub struct CreateThreadDto {
     pub channel: Channel,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "party_id")]
     pub party_id: Option<Uuid>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        alias = "subject_type"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "subject_type")]
     pub subject_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "subject_id")]
     pub subject_id: Option<Uuid>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        alias = "external_ref"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "external_ref")]
     pub external_ref: Option<String>,
     pub status: ThreadStatus,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        alias = "last_message_at"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "last_message_at")]
     pub last_message_at: Option<DateTime<Utc>>,
 }
 
@@ -76,26 +64,14 @@ pub struct UpdateThreadDto {
     pub channel: Channel,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "party_id")]
     pub party_id: Option<Uuid>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        alias = "subject_type"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "subject_type")]
     pub subject_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "subject_id")]
     pub subject_id: Option<Uuid>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        alias = "external_ref"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "external_ref")]
     pub external_ref: Option<String>,
     pub status: ThreadStatus,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        alias = "last_message_at"
-    )]
+    #[serde(default, skip_serializing_if = "Option::is_none", alias = "last_message_at")]
     pub last_message_at: Option<DateTime<Utc>>,
 }
 
@@ -131,13 +107,7 @@ pub struct PatchThreadDto {
 impl PatchThreadDto {
     /// Check if any field is set
     pub fn has_changes(&self) -> bool {
-        self.channel.is_some()
-            || self.party_id.is_some()
-            || self.subject_type.is_some()
-            || self.subject_id.is_some()
-            || self.external_ref.is_some()
-            || self.status.is_some()
-            || self.last_message_at.is_some()
+        self.channel.is_some() || self.party_id.is_some() || self.subject_type.is_some() || self.subject_id.is_some() || self.external_ref.is_some() || self.status.is_some() || self.last_message_at.is_some()
     }
 }
 
@@ -153,10 +123,7 @@ impl PatchThreadDto {
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadResponseDto {
-    #[cfg_attr(
-        feature = "openapi",
-        schema(example = "550e8400-e29b-41d4-a716-446655440000")
-    )]
+    #[cfg_attr(feature = "openapi", schema(example = "550e8400-e29b-41d4-a716-446655440000"))]
     pub id: Uuid,
     pub channel: Channel,
     pub party_id: Option<Uuid>,
