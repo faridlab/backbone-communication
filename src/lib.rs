@@ -27,6 +27,16 @@ pub mod exports;
 // <<< CUSTOM MODULES
 // END CUSTOM
 
+// The module's extension (hand-written; ADR-0031).
+#[path = "lib.ext.rs"]
+mod lib_ext;
+pub use lib_ext::*;
+/// This crate's module and builder under fixed names, for the extension's `impl` blocks.
+#[allow(dead_code)]
+pub(crate) type ThisModule = CommunicationModule;
+#[allow(dead_code)]
+pub(crate) type ThisModuleBuilder = CommunicationModuleBuilder;
+
 // Re-exports for convenience - Domain entities
 pub use domain::entity::*;
 
@@ -59,13 +69,33 @@ use sqlx::PgPool;
 pub struct CommunicationModule {
     pub(crate) message_service: Arc<MessageService>,
     pub(crate) thread_service: Arc<ThreadService>,
+    /// The module's extension state (`lib.ext.rs`); its fields read through `Deref`.
+    pub(crate) ext: ModuleExt,
     // <<< CUSTOM FIELDS
-    /// The validated write path for the communication domain (idempotent inbound
-    /// ingest, thread routing, outbound send/deliver). This is the module's
-    /// deliberate outward write contract — the front door, in contrast to the
-    /// unguarded generic CRUD mutators on the sibling services.
-    pub(crate) write_service: Arc<crate::application::service::CommunicationWriteService>,
     // END CUSTOM
+}
+
+impl std::ops::Deref for CommunicationModule {
+    type Target = ModuleExt;
+    fn deref(&self) -> &Self::Target {
+        &self.ext
+    }
+}
+
+impl std::ops::DerefMut for CommunicationModule {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.ext
+    }
+}
+
+/// What the extension's `build` hook receives from the generated build (ADR-0031).
+#[allow(dead_code)]
+pub(crate) struct ModuleParts<'a> {
+    pub(crate) db_pool: &'a PgPool,
+    pub(crate) message_service: &'a Arc<MessageService>,
+    pub(crate) message_repository: &'a Arc<MessageRepository>,
+    pub(crate) thread_service: &'a Arc<ThreadService>,
+    pub(crate) thread_repository: &'a Arc<ThreadRepository>,
 }
 
 impl CommunicationModule {
@@ -117,32 +147,29 @@ impl CommunicationModule {
     }
 
     // <<< CUSTOM METHODS
-    /// The validated write service for the communication domain.
-    ///
-    /// Consumers should call this (not the generic CRUD mutators) for any production
-    /// write: it enforces idempotent inbound ingest (`unique(channel, external_id)`),
-    /// thread routing onto `party_id`, and the outbound queue/sent/failed/delivered
-    /// transitions.
-    pub fn write_service(&self) -> Arc<crate::application::service::CommunicationWriteService> {
-        self.write_service.clone()
-    }
-
-    /// The outward READ contract for sibling modules (`CommunicationQueryService`),
-    /// ready-constructed over the same CRUD services. Cheap to build per use.
-    pub fn query_service(&self) -> crate::exports::CommunicationQueryServiceImpl {
-        crate::exports::CommunicationQueryServiceImpl::new(
-            self.message_service.clone(),
-            self.thread_service.clone(),
-        )
-    }
     // END CUSTOM
 }
 
 /// Builder for CommunicationModule
 pub struct CommunicationModuleBuilder {
     db_pool: Option<PgPool>,
+    /// The builder's extension state (`lib.ext.rs`); its fields read through `Deref`.
+    ext: ModuleBuilderExt,
     // <<< CUSTOM BUILDER FIELDS
     // END CUSTOM
+}
+
+impl std::ops::Deref for CommunicationModuleBuilder {
+    type Target = ModuleBuilderExt;
+    fn deref(&self) -> &Self::Target {
+        &self.ext
+    }
+}
+
+impl std::ops::DerefMut for CommunicationModuleBuilder {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.ext
+    }
 }
 
 impl CommunicationModuleBuilder {
@@ -150,6 +177,7 @@ impl CommunicationModuleBuilder {
     pub fn new() -> Self {
         Self {
             db_pool: None,
+            ext: Default::default(),
             // <<< CUSTOM BUILDER DEFAULTS
             // END CUSTOM
         }
@@ -178,16 +206,22 @@ impl CommunicationModuleBuilder {
         let thread_service = Arc::new(ThreadService::with_repository(thread_repository.clone()));
 
         // <<< CUSTOM
-        let write_service = Arc::new(crate::application::service::CommunicationWriteService::new(
-            db_pool.clone(),
-        ));
         // END CUSTOM
+
+        // The extension builds its own state from what the generated build made.
+        let ext = self.ext.build(&ModuleParts {
+            db_pool: &db_pool,
+            message_service: &message_service,
+            message_repository: &message_repository,
+            thread_service: &thread_service,
+            thread_repository: &thread_repository,
+        })?;
 
         Ok(CommunicationModule {
             message_service,
             thread_service,
+            ext,
             // <<< CUSTOM
-            write_service,
             // END CUSTOM
         })
     }
