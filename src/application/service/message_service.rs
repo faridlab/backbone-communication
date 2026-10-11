@@ -32,5 +32,3 @@ pub type MessageService = GenericCrudService<
     MessageRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

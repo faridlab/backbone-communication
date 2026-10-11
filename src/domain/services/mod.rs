@@ -8,5 +8,3 @@ pub mod thread_domain_policy;
 pub use message_domain_policy::MessageDomainPolicy;
 pub use thread_domain_policy::ThreadDomainPolicy;
 
-// <<< CUSTOM
-// END CUSTOM

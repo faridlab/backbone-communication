@@ -24,8 +24,6 @@ pub mod application;
 pub mod presentation;
 pub mod seeders;
 pub mod exports;
-// <<< CUSTOM MODULES
-// END CUSTOM
 
 // The module's extension (hand-written; ADR-0031).
 #[path = "lib.ext.rs"]
@@ -71,8 +69,6 @@ pub struct CommunicationModule {
     pub(crate) thread_service: Arc<ThreadService>,
     /// The module's extension state (`lib.ext.rs`); its fields read through `Deref`.
     pub(crate) ext: ModuleExt,
-    // <<< CUSTOM FIELDS
-    // END CUSTOM
 }
 
 impl std::ops::Deref for CommunicationModule {
@@ -146,8 +142,6 @@ impl CommunicationModule {
             .merge(create_thread_read_routes(self.thread_service.clone()))
     }
 
-    // <<< CUSTOM METHODS
-    // END CUSTOM
 }
 
 /// Builder for CommunicationModule
@@ -155,8 +149,6 @@ pub struct CommunicationModuleBuilder {
     db_pool: Option<PgPool>,
     /// The builder's extension state (`lib.ext.rs`); its fields read through `Deref`.
     ext: ModuleBuilderExt,
-    // <<< CUSTOM BUILDER FIELDS
-    // END CUSTOM
 }
 
 impl std::ops::Deref for CommunicationModuleBuilder {
@@ -178,8 +170,6 @@ impl CommunicationModuleBuilder {
         Self {
             db_pool: None,
             ext: Default::default(),
-            // <<< CUSTOM BUILDER DEFAULTS
-            // END CUSTOM
         }
     }
 
@@ -189,8 +179,6 @@ impl CommunicationModuleBuilder {
         self
     }
 
-    // <<< CUSTOM - custom builder methods
-    // END CUSTOM
 
     /// Build the module with configured dependencies
     pub fn build(self) -> anyhow::Result<CommunicationModule> {
@@ -205,8 +193,6 @@ impl CommunicationModuleBuilder {
         let thread_repository = Arc::new(ThreadRepository::new(db_pool.clone()));
         let thread_service = Arc::new(ThreadService::with_repository(thread_repository.clone()));
 
-        // <<< CUSTOM
-        // END CUSTOM
 
         // The extension builds its own state from what the generated build made.
         let ext = self.ext.build(&ModuleParts {
@@ -221,8 +207,6 @@ impl CommunicationModuleBuilder {
             message_service,
             thread_service,
             ext,
-            // <<< CUSTOM
-            // END CUSTOM
         })
     }
 }

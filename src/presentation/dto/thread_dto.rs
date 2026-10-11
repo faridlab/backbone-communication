@@ -283,7 +283,7 @@ impl backbone_core::ApplyUpdateDto<UpdateThreadDto> for Thread {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to Thread here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

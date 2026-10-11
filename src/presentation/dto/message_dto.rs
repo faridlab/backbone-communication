@@ -325,7 +325,7 @@ impl backbone_core::ApplyUpdateDto<UpdateMessageDto> for Message {
 // Custom DTOs
 // =============================================================================
 
-// <<< CUSTOM DTOs
 // Add custom DTOs specific to Message here.
 // This section will be preserved during regeneration.
 // >>> END CUSTOM DTOs
+

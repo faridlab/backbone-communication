@@ -11,5 +11,3 @@ pub mod thread_validator;
 pub use message_validator::{MessageValidator, message_validator};
 pub use thread_validator::{ThreadValidator, thread_validator};
 
-// <<< CUSTOM
-// END CUSTOM

@@ -32,5 +32,3 @@ pub type ThreadService = GenericCrudService<
     ThreadRepository,
 >;
 
-// <<< CUSTOM
-// END CUSTOM

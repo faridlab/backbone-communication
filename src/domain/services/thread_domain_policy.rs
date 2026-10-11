@@ -18,5 +18,3 @@ use crate::domain::entity::Thread;
 /// service. `PermitAllPolicy` is the safe default until then.
 pub type ThreadDomainPolicy = PermitAllPolicy<Thread>;
 
-// <<< CUSTOM
-// END CUSTOM

@@ -17,9 +17,5 @@ pub fn thread_validator() -> ThreadValidator {
     EntityValidator::new()
         .rule(OptionalNotBlank::new("subject_type", |e: &Thread| e.subject_type.as_deref()))
         .rule(OptionalNotBlank::new("external_ref", |e: &Thread| e.external_ref.as_deref()))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

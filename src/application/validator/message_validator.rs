@@ -20,9 +20,5 @@ pub fn message_validator() -> MessageValidator {
         .rule(OptionalNotBlank::new("address_to", |e: &Message| e.address_to.as_deref()))
         .rule(RequiredString::new("body", |e: &Message| &e.body))
         .rule(OptionalNotBlank::new("failure_reason", |e: &Message| e.failure_reason.as_deref()))
-    // <<< CUSTOM RULES
-    // END CUSTOM RULES
 }
 
-// <<< CUSTOM
-// END CUSTOM

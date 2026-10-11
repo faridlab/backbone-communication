@@ -12,5 +12,3 @@ pub use message_event_handlers::MessageEventHandler;
 pub use thread_events::{ThreadEvent, ThreadEventPublisher, NoopThreadEventPublisher};
 pub use thread_event_handlers::ThreadEventHandler;
 
-// <<< CUSTOM
-// END CUSTOM
