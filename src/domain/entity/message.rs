@@ -275,6 +275,9 @@ impl backbone_orm::EntityRepoMeta for Message {
     fn search_fields() -> &'static [&'static str] {
         &["body"]
     }
+    fn relations() -> &'static [(&'static str, &'static str, &'static str)] {
+        &[("thread", "threads", "threadId")]
+    }
 }
 
 /// Builder for Message entity
