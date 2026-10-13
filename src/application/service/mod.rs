@@ -13,6 +13,8 @@ pub mod thread_service;
 
 pub use message_service::MessageService;
 pub use thread_service::ThreadService;
+pub use message_service::MessageRowRules;
+pub use thread_service::ThreadRowRules;
 
 // This directory's extension (hand-written; ADR-0031).
 include!("mod.ext.rs");
