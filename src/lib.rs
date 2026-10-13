@@ -45,9 +45,6 @@ pub use infrastructure::persistence::*;
 pub use application::service::MessageService;
 pub use application::service::ThreadService;
 
-// Re-exports - Workflows
-pub use application::workflows::*;
-
 use std::sync::Arc;
 use axum::Router;
 use sqlx::PgPool;
