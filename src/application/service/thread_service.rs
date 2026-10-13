@@ -56,16 +56,17 @@ impl backbone_core::write_guard::WriteGuard<Thread> for ThreadRowRules {
         };
         let row = &row;
         let old = ctx.before.and_then(|b| serde_json::to_value(b).ok());
-        let mut shadow = Vec::new();
+        let shadow = Vec::new();
+        let mut refuse = Vec::new();
         // `subject_type_max_length` (@length(max=60) on Thread.subject_type)
         if (create || (update && r::changed(old.as_ref(), row, &["subject_type"]))) && !r::holds(&r::le(r::length(r::field(row, "subject_type")), r::Val::Num(60.0_f64))) {
-            shadow.push(Violation::new("subject_type", "max_length", "subject_type must be at most 60 characters").with_param("max", 60_i64));
+            refuse.push(Violation::new("subject_type", "max_length", "subject_type must be at most 60 characters").with_param("max", 60_i64));
         }
         // `external_ref_max_length` (@length(max=200) on Thread.external_ref)
         if (create || (update && r::changed(old.as_ref(), row, &["external_ref"]))) && !r::holds(&r::le(r::length(r::field(row, "external_ref")), r::Val::Num(200.0_f64))) {
-            shadow.push(Violation::new("external_ref", "max_length", "external_ref must be at most 200 characters").with_param("max", 200_i64));
+            refuse.push(Violation::new("external_ref", "max_length", "external_ref must be at most 200 characters").with_param("max", 200_i64));
         }
-        GuardOutcome { refuse: Vec::new(), shadow }
+        GuardOutcome { refuse, shadow }
     }
 }
 
