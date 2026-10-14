@@ -184,11 +184,11 @@ impl CommunicationModuleBuilder {
 
         // Message service
         let message_repository = Arc::new(MessageRepository::new(db_pool.clone()));
-        let message_service = Arc::new(MessageService::with_repository(message_repository.clone()).with_guard(Arc::new(crate::application::service::MessageRowRules)));
+        let message_service = Arc::new(crate::application::service::build_message_service(message_repository.clone()));
 
         // Thread service
         let thread_repository = Arc::new(ThreadRepository::new(db_pool.clone()));
-        let thread_service = Arc::new(ThreadService::with_repository(thread_repository.clone()).with_guard(Arc::new(crate::application::service::ThreadRowRules)));
+        let thread_service = Arc::new(crate::application::service::build_thread_service(thread_repository.clone()));
 
 
         // The extension builds its own state from what the generated build made.

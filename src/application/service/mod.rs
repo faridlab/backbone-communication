@@ -16,5 +16,21 @@ pub use thread_service::ThreadService;
 pub use message_service::MessageRowRules;
 pub use thread_service::ThreadRowRules;
 
+/// A `MessageService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_message_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::MessageRepository>,
+) -> MessageService {
+    MessageService::with_repository(repository).with_guard(std::sync::Arc::new(MessageRowRules))
+}
+
+/// A `ThreadService` over `repository` with its write guard attached: the way to build it, so its writes are
+/// served only with the rules the schema declares.
+pub fn build_thread_service(
+    repository: std::sync::Arc<crate::infrastructure::persistence::ThreadRepository>,
+) -> ThreadService {
+    ThreadService::with_repository(repository).with_guard(std::sync::Arc::new(ThreadRowRules))
+}
+
 // This directory's extension (hand-written; ADR-0031).
 include!("mod.ext.rs");
