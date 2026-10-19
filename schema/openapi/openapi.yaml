@@ -815,9 +815,6 @@ components:
         - direction
         - channel
         - body
-        - status
-        - occurred_at
-        - metadata
       properties:
         thread_id:
           type: string
@@ -845,8 +842,6 @@ components:
         occurred_at:
           type: string
           format: date-time
-        metadata:
-          type: object
 
     UpdateMessageRequest:
       type: object
@@ -857,7 +852,6 @@ components:
         - body
         - status
         - occurred_at
-        - metadata
       properties:
         thread_id:
           type: string
@@ -885,8 +879,6 @@ components:
         occurred_at:
           type: string
           format: date-time
-        metadata:
-          type: object
 
     PatchMessageRequest:
       type: object
@@ -917,8 +909,6 @@ components:
         occurred_at:
           type: string
           format: date-time
-        metadata:
-          type: object
 
     MessageList:
       type: object
@@ -981,10 +971,6 @@ components:
 
     CreateThreadRequest:
       type: object
-      required:
-        - channel
-        - status
-        - metadata
       properties:
         channel:
           type: string
@@ -1008,15 +994,12 @@ components:
           nullable: true
           type: string
           format: date-time
-        metadata:
-          type: object
 
     UpdateThreadRequest:
       type: object
       required:
         - channel
         - status
-        - metadata
       properties:
         channel:
           type: string
@@ -1040,8 +1023,6 @@ components:
           nullable: true
           type: string
           format: date-time
-        metadata:
-          type: object
 
     PatchThreadRequest:
       type: object
@@ -1068,8 +1049,6 @@ components:
           nullable: true
           type: string
           format: date-time
-        metadata:
-          type: object
 
     ThreadList:
       type: object

@@ -44,12 +44,21 @@ pub struct CreateMessageDto {
     pub address_to: Option<String>,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     pub body: String,
+    #[serde(default = "default_create_message_status")]
     pub status: MessageStatus,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "failure_reason")]
     pub failure_reason: Option<String>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
-    #[serde(alias = "occurred_at")]
+    #[serde(default = "default_create_message_occurred_at", alias = "occurred_at")]
     pub occurred_at: DateTime<Utc>,
+}
+
+fn default_create_message_status() -> MessageStatus {
+    MessageStatus::Received
+}
+
+fn default_create_message_occurred_at() -> DateTime<Utc> {
+    Utc::now()
 }
 
 // =============================================================================
@@ -104,19 +113,19 @@ pub struct PatchMessageDto {
     pub direction: Option<Direction>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel: Option<Channel>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "external_id")]
-    pub external_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "address_from")]
-    pub address_from: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "address_to")]
-    pub address_to: Option<String>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "external_id")]
+    pub external_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "address_from")]
+    pub address_from: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "address_to")]
+    pub address_to: Option<Option<String>>,
     #[cfg_attr(feature = "openapi", schema(example = "example"))]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub body: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<MessageStatus>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "failure_reason")]
-    pub failure_reason: Option<String>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "failure_reason")]
+    pub failure_reason: Option<Option<String>>,
     #[cfg_attr(feature = "openapi", schema(example = "2024-01-01T00:00:00Z"))]
     #[serde(skip_serializing_if = "Option::is_none", alias = "occurred_at")]
     pub occurred_at: Option<DateTime<Utc>>,
@@ -314,12 +323,4 @@ impl backbone_core::ApplyUpdateDto<UpdateMessageDto> for Message {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to Message here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

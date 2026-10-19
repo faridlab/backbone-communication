@@ -30,6 +30,7 @@ use crate::domain::entity::ThreadStatus;
 #[cfg_attr(feature = "openapi", derive(ToSchema))]
 #[serde(rename_all = "camelCase")]
 pub struct CreateThreadDto {
+    #[serde(default = "default_create_thread_channel")]
     pub channel: Channel,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "party_id")]
     pub party_id: Option<Uuid>,
@@ -39,9 +40,18 @@ pub struct CreateThreadDto {
     pub subject_id: Option<Uuid>,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "external_ref")]
     pub external_ref: Option<String>,
+    #[serde(default = "default_create_thread_status")]
     pub status: ThreadStatus,
     #[serde(default, skip_serializing_if = "Option::is_none", alias = "last_message_at")]
     pub last_message_at: Option<DateTime<Utc>>,
+}
+
+fn default_create_thread_channel() -> Channel {
+    Channel::Whatsapp
+}
+
+fn default_create_thread_status() -> ThreadStatus {
+    ThreadStatus::Open
 }
 
 // =============================================================================
@@ -84,18 +94,18 @@ pub struct UpdateThreadDto {
 pub struct PatchThreadDto {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub channel: Option<Channel>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "party_id")]
-    pub party_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "subject_type")]
-    pub subject_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "subject_id")]
-    pub subject_id: Option<Uuid>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "external_ref")]
-    pub external_ref: Option<String>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "party_id")]
+    pub party_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "subject_type")]
+    pub subject_type: Option<Option<String>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "subject_id")]
+    pub subject_id: Option<Option<Uuid>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "external_ref")]
+    pub external_ref: Option<Option<String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<ThreadStatus>,
-    #[serde(skip_serializing_if = "Option::is_none", alias = "last_message_at")]
-    pub last_message_at: Option<DateTime<Utc>>,
+    #[serde(default, deserialize_with = "crate::presentation::dto::double_option", alias = "last_message_at")]
+    pub last_message_at: Option<Option<DateTime<Utc>>>,
 }
 
 impl PatchThreadDto {
@@ -272,12 +282,4 @@ impl backbone_core::ApplyUpdateDto<UpdateThreadDto> for Thread {
         Ok(self)
     }
 }
-
-// =============================================================================
-// Custom DTOs
-// =============================================================================
-
-// Add custom DTOs specific to Thread here.
-// This section will be preserved during regeneration.
-// >>> END CUSTOM DTOs
 

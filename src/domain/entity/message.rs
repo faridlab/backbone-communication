@@ -233,6 +233,12 @@ impl super::Entity for Message {
 }
 
 impl backbone_core::PersistentEntity for Message {
+    fn references() -> &'static [backbone_core::Reference] {
+        const REFERENCES: &[backbone_core::Reference] = &[
+            backbone_core::Reference::new("thread_id", "communication.threads", "id"),
+        ];
+        REFERENCES
+    }
     fn entity_id(&self) -> String {
         self.id.to_string()
     }

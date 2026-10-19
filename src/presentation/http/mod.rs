@@ -10,5 +10,5 @@ pub mod thread_handler;
 
 
 // Re-exports
-pub use message_handler::{create_message_routes, create_message_read_routes, create_message_write_routes};
-pub use thread_handler::{create_thread_routes, create_thread_read_routes, create_thread_write_routes};
+pub use message_handler::{create_message_routes, create_message_read_routes, create_message_write_routes, message_permissions};
+pub use thread_handler::{create_thread_routes, create_thread_read_routes, create_thread_write_routes, thread_permissions};
